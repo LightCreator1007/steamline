@@ -8,7 +8,7 @@ export type EngineErrorCode =
   | "INVALID_INPUT";
 
 const SECRET_PATTERNS: RegExp[] = [
-  /Bearer\s+[A-Za-z0-9._\-]+/g,
+  /Bearer\s+[A-Za-z0-9._\-]+/gi,
   /X-Api-Token[:=]\s*[A-Za-z0-9._\-]+/gi,
 ];
 

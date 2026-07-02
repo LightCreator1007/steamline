@@ -20,6 +20,12 @@ test("EngineError redacts bearer tokens and api tokens in the message", () => {
   assert.ok(e.message.includes("[redacted]"));
 });
 
+test("redaction is case-insensitive for bearer tokens", () => {
+  const e = new EngineError("INVALID_INPUT", "sent bearer abc.def.ghi upstream", "retry");
+  assert.ok(!e.message.includes("abc.def.ghi"));
+  assert.ok(e.message.includes("[redacted]"));
+});
+
 test("redactSecrets leaves clean strings untouched", () => {
   assert.equal(redactSecrets("nothing secret here"), "nothing secret here");
 });
