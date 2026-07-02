@@ -1,0 +1,9 @@
+{
+  "name": "steamline",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:engine": "node --test --experimental-strip-types \"packages/engine/*.test.ts\"",
+    "test:feed": "node --test --experimental-strip-types \"packages/feed/*.test.ts\""
+  }
+}
