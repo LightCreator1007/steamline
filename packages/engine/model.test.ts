@@ -15,6 +15,9 @@ test("defaultConfig matches the spec defaults", () => {
   assert.equal(defaultConfig.edgeMin, 0.02);
   assert.equal(defaultConfig.kellyFraction, 0.25);
   assert.equal(defaultConfig.startingBankroll, 1_000_000_000);
+  assert.equal(defaultConfig.maxStakePerMarket, 50_000_000);
+  assert.equal(defaultConfig.maxExposure, 500_000_000);
+  assert.equal(defaultConfig.dailyLossStop, 200_000_000);
   assert.equal(defaultConfig.method, "fixed");
   assert.equal(defaultConfig.preMatchOnly, true);
   assert.equal(defaultConfig.shockGuardMs, 300000);
