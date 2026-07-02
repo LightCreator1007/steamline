@@ -11,5 +11,7 @@ test-ledger/
 keypairs/
 *.keypair.json
 
-./docs
+/docs/
+/HANDOFF.md
+/CLAUDE.md
 .superpowers/
