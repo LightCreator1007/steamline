@@ -10,3 +10,6 @@ test-ledger/
 .DS_Store
 keypairs/
 *.keypair.json
+
+./docs
+.superpowers/
