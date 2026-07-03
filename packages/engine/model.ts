@@ -114,7 +114,7 @@ export interface EngineConfig {
 
 export const defaultConfig: EngineConfig = {
   scale: 1000,
-  staleMs: 120000,
+  staleMs: 120_000,
   windowTicks: 4,
   theta: 0.03,
   persistence: 2,
@@ -130,8 +130,8 @@ export const defaultConfig: EngineConfig = {
   dailyLossStop: 200_000_000,
   method: "fixed",
   preMatchOnly: true,
-  shockGuardMs: 300000,
-  cooldownMs: 600000,
+  shockGuardMs: 300_000,
+  cooldownMs: 600_000,
   maxPositionsPerFixture: 3,
 };
 

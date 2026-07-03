@@ -7,15 +7,19 @@ export type EngineErrorCode =
   | "CAP_EXCEEDED"
   | "INVALID_INPUT";
 
-const SECRET_PATTERNS: RegExp[] = [
+const SECRET_PATTERNS = [
   /Bearer\s+[A-Za-z0-9._\-]+/gi,
   /X-Api-Token[:=]\s*[A-Za-z0-9._\-]+/gi,
-];
+] as const satisfies readonly RegExp[];
 
 export function redactSecrets(s: string): string {
   let out = s;
   for (const p of SECRET_PATTERNS) {
-    out = out.replace(p, (m) => (m.includes(":") || m.includes("=") ? m.split(/[:=]/)[0] + ": [redacted]" : "Bearer [redacted]"));
+    out = out.replace(p, (m) => {
+      const separatorIndex = m.search(/[:=]/);
+      if (separatorIndex === -1) return "Bearer [redacted]";
+      return `${m.slice(0, separatorIndex)}: [redacted]`;
+    });
   }
   return out;
 }
