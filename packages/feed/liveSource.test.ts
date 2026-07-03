@@ -37,6 +37,28 @@ test("streamSse resumes with Last-Event-ID after a dropped stream", async () => 
   assert.equal(lastIdHeaders[1], "1");
 });
 
+test("streamSse reassembles multi-byte UTF-8 characters split across chunk boundaries", async () => {
+  const payload = Buffer.from('data: {"team":"España"}\n\n', "utf8");
+  const splitIndex = payload.indexOf(0xc3) + 1; // split inside the 2-byte "ñ" encoding
+  const server = createServer((req, res) => {
+    res.setHeader("content-type", "text/event-stream");
+    res.write(payload.subarray(0, splitIndex));
+    setTimeout(() => {
+      res.write(payload.subarray(splitIndex));
+      res.end();
+    }, 10);
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const port = (server.address() as { port: number }).port;
+
+  const got: SseEvent[] = [];
+  await streamSse(`http://127.0.0.1:${port}/stream`, {}, (e) => got.push(e), { maxReconnects: 0, backoffMs: 1 });
+  server.close();
+
+  assert.equal(got.length, 1);
+  assert.equal(JSON.parse(got[0].data).team, "España");
+});
+
 test("poll mode dedupes odds by MessageId and scores by seq", async () => {
   const odds = [
     { FixtureId: 9, MessageId: "m1", Ts: 10, Bookmaker: "StablePrice", BookmakerId: 0, SuperOddsType: "1X2", InRunning: false, PriceNames: ["1"], Prices: [2000], Pct: ["50"] },

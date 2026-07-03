@@ -35,8 +35,9 @@ export async function streamSse(
       if (!res.ok || !res.body) throw new FeedError("HTTP", `sse status ${res.status} for ${url}`, res.status);
       attempt = 0;
       let rest = "";
+      const decoder = new TextDecoder();
       for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
-        rest += Buffer.from(chunk).toString("utf8");
+        rest += decoder.decode(chunk, { stream: true });
         const parsed = parseSseChunk(rest);
         rest = parsed.rest;
         for (const ev of parsed.events) {
