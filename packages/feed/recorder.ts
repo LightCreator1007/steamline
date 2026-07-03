@@ -116,17 +116,25 @@ async function mainRecorder(): Promise<void> {
     }
     return out;
   };
+  if (values.mode !== "poll" && values.mode !== "sse") {
+    console.log("usage: recorder.ts --fixtures 123,456 [--network devnet|mainnet] [--mode poll|sse] [--out dir] [--proofs]");
+    process.exitCode = 2;
+    return;
+  }
   const fixtureIds = values.fixtures.split(",").map(Number);
-  const source = liveSource({
-    client,
-    fixtureIds,
-    mode: values.mode as "poll" | "sse",
-    apiBase: env.apiBase,
-    headers: {
-      ...(env.jwt ?? creds.jwt ? { Authorization: `Bearer ${env.jwt ?? creds.jwt}` } : {}),
-      ...(env.apiToken ?? creds.apiToken ? { "X-Api-Token": (env.apiToken ?? creds.apiToken) as string } : {}),
-    },
-  });
+  const source =
+    values.mode === "sse"
+      ? liveSource({
+          client,
+          fixtureIds,
+          mode: "sse",
+          apiBase: env.apiBase,
+          headers: {
+            ...(env.jwt ?? creds.jwt ? { Authorization: `Bearer ${env.jwt ?? creds.jwt}` } : {}),
+            ...(env.apiToken ?? creds.apiToken ? { "X-Api-Token": (env.apiToken ?? creds.apiToken) as string } : {}),
+          },
+        })
+      : liveSource({ client, fixtureIds, mode: "poll" });
   console.log(`recording fixtures ${fixtureIds.join(", ")} on ${env.network} (${values.mode}) to ${values.out}`);
   const stats = await record({ client, source, outDir: values.out as string, proofs: values.proofs, fetchRoots });
   console.log(`done: ${JSON.stringify(stats)}`);

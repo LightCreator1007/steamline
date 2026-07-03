@@ -56,16 +56,41 @@ export async function streamSse(
   }
 }
 
-export interface LiveOpts {
+export interface CommonLiveOpts {
   client: TxlineClient;
   fixtureIds: number[];
-  mode: "sse" | "poll";
-  apiBase?: string;
-  headers?: Record<string, string>;
   pollMs?: number;
   fetchImpl?: typeof fetch;
   maxReconnects?: number;
   backoffMs?: number;
+}
+
+export type LiveOpts =
+  | ({ mode: "poll" } & CommonLiveOpts)
+  | ({ mode: "sse"; apiBase: string; headers: Record<string, string> } & CommonLiveOpts);
+
+/**
+ * Sleeps for `ms` milliseconds, resolving early if `signal` aborts first.
+ * Removes its own abort listener before returning either way, so no listener
+ * survives past the sleep call.
+ */
+export function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve) => {
+    if (signal?.aborted) {
+      resolve();
+      return;
+    }
+    let onAbort: (() => void) | null = null;
+    const timer = setTimeout(() => {
+      if (signal && onAbort) signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    onAbort = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 function channel<T>() {
@@ -82,18 +107,26 @@ function channel<T>() {
       notify?.();
     },
     async *drain(signal?: AbortSignal): AsyncIterable<T> {
-      for (;;) {
-        if (signal?.aborted) return;
-        if (buf.length > 0) {
-          yield buf.shift() as T;
-          continue;
+      let onAbort: (() => void) | null = null;
+      if (signal) {
+        onAbort = () => notify?.();
+        signal.addEventListener("abort", onAbort);
+      }
+      try {
+        for (;;) {
+          if (signal?.aborted) return;
+          if (buf.length > 0) {
+            yield buf.shift() as T;
+            continue;
+          }
+          if (done) return;
+          await new Promise<void>((r) => {
+            notify = r;
+          });
+          notify = null;
         }
-        if (done) return;
-        await new Promise<void>((r) => {
-          notify = r;
-          if (signal) signal.addEventListener("abort", () => r(), { once: true });
-        });
-        notify = null;
+      } finally {
+        if (signal && onAbort) signal.removeEventListener("abort", onAbort);
       }
     },
   };
@@ -124,7 +157,7 @@ export function liveSource(opts: LiveOpts): FeedSource {
           workers.push(
             streamSse(
               `${opts.apiBase}/api/odds/stream?fixtureId=${id}`,
-              opts.headers ?? {},
+              opts.headers,
               (e) => {
                 try {
                   pushOdds(JSON.parse(e.data) as OddsPayload);
@@ -151,7 +184,8 @@ export function liveSource(opts: LiveOpts): FeedSource {
                 // transient poll errors are retried on the next cycle
               }
             }
-            await sleep(pollMs);
+            await abortableSleep(pollMs, signal);
+            if (signal?.aborted) return;
           }
         })(),
       );

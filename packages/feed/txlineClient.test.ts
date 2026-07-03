@@ -1,23 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { makeClient, FeedError } from "./txlineClient.ts";
-
-interface Seen { url: string; auth?: string; apiToken?: string }
-
-function startServer(handler: (req: IncomingMessage, res: ServerResponse, seen: Seen[]) => void) {
-  const seen: Seen[] = [];
-  const server = createServer((req, res) => {
-    seen.push({ url: req.url ?? "", auth: req.headers.authorization, apiToken: req.headers["x-api-token"] as string | undefined });
-    handler(req, res, seen);
-  });
-  return new Promise<{ base: string; seen: Seen[]; close: () => void }>((resolve) => {
-    server.listen(0, "127.0.0.1", () => {
-      const addr = server.address() as { port: number };
-      resolve({ base: `http://127.0.0.1:${addr.port}`, seen, close: () => server.close() });
-    });
-  });
-}
+import { startServer } from "./testServer.ts";
 
 test("sends both auth headers and parses JSON", async () => {
   const srv = await startServer((_req, res) => {

@@ -1,14 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createServer } from "node:http";
+import { getEventListeners } from "node:events";
 import { streamSse, liveSource } from "./liveSource.ts";
 import { type SseEvent } from "./sse.ts";
-import { type TxlineClient } from "./txlineClient.ts";
+import { type TxlineClient, sleep } from "./txlineClient.ts";
+import { startServer } from "./testServer.ts";
 
 test("streamSse resumes with Last-Event-ID after a dropped stream", async () => {
   let connections = 0;
   const lastIdHeaders: Array<string | undefined> = [];
-  const server = createServer((req, res) => {
+  const srv = await startServer((req, res) => {
     connections++;
     lastIdHeaders.push(req.headers["last-event-id"] as string | undefined);
     res.setHeader("content-type", "text/event-stream");
@@ -23,14 +24,12 @@ test("streamSse resumes with Last-Event-ID after a dropped stream", async () => 
       res.end();
     }
   });
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  const port = (server.address() as { port: number }).port;
 
   const got: SseEvent[] = [];
   await assert.rejects(
-    streamSse(`http://127.0.0.1:${port}/stream`, {}, (e) => got.push(e), { maxReconnects: 1, backoffMs: 1 }),
+    streamSse(`${srv.base}/stream`, {}, (e) => got.push(e), { maxReconnects: 1, backoffMs: 1 }),
   );
-  server.close();
+  srv.close();
 
   assert.deepEqual(got.map((e) => e.data), ['{"n":1}', '{"n":2}']);
   assert.equal(lastIdHeaders[0], undefined);
@@ -40,7 +39,7 @@ test("streamSse resumes with Last-Event-ID after a dropped stream", async () => 
 test("streamSse reassembles multi-byte UTF-8 characters split across chunk boundaries", async () => {
   const payload = Buffer.from('data: {"team":"España"}\n\n', "utf8");
   const splitIndex = payload.indexOf(0xc3) + 1; // split inside the 2-byte "ñ" encoding
-  const server = createServer((req, res) => {
+  const srv = await startServer((req, res) => {
     res.setHeader("content-type", "text/event-stream");
     res.write(payload.subarray(0, splitIndex));
     setTimeout(() => {
@@ -48,12 +47,10 @@ test("streamSse reassembles multi-byte UTF-8 characters split across chunk bound
       res.end();
     }, 10);
   });
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  const port = (server.address() as { port: number }).port;
 
   const got: SseEvent[] = [];
-  await streamSse(`http://127.0.0.1:${port}/stream`, {}, (e) => got.push(e), { maxReconnects: 0, backoffMs: 1 });
-  server.close();
+  await streamSse(`${srv.base}/stream`, {}, (e) => got.push(e), { maxReconnects: 0, backoffMs: 1 });
+  srv.close();
 
   assert.equal(got.length, 1);
   assert.equal(JSON.parse(got[0].data).team, "España");
@@ -83,4 +80,79 @@ test("poll mode dedupes odds by MessageId and scores by seq", async () => {
     if (ctl.signal.aborted) break;
   }
   assert.deepEqual(got.sort(), ["odds", "score"]);
+});
+
+test("drain keeps a bounded abort-listener count across many events", async () => {
+  let n = 0;
+  const client: TxlineClient = {
+    fixturesSnapshot: async () => [],
+    oddsSnapshot: async (id) => {
+      n++;
+      return [
+        {
+          FixtureId: id,
+          MessageId: `m${n}`,
+          Ts: n,
+          Bookmaker: "StablePrice",
+          BookmakerId: 0,
+          SuperOddsType: "1X2",
+          InRunning: false,
+          PriceNames: ["1"],
+          Prices: [2000],
+          Pct: ["50"],
+        },
+      ];
+    },
+    oddsValidation: async () => ({}),
+    scoresSnapshot: async () => [],
+    scoreStatValidation: async () => ({}),
+  };
+  const ctl = new AbortController();
+  const src = liveSource({ client, fixtureIds: [1], mode: "poll", pollMs: 5 });
+  const it = src.events(ctl.signal)[Symbol.asyncIterator]();
+
+  for (let i = 0; i < 8; i++) {
+    await it.next();
+  }
+
+  const listenerCount = getEventListeners(ctl.signal, "abort").length;
+  assert.ok(listenerCount <= 2, `expected bounded abort-listener count, got ${listenerCount}`);
+
+  ctl.abort();
+  const result = await it.next();
+  assert.equal(result.done, true);
+});
+
+test("aborting a poll-mode liveSource with a long pollMs exits promptly", async () => {
+  const client: TxlineClient = {
+    fixturesSnapshot: async () => [],
+    oddsSnapshot: async (id) => [
+      {
+        FixtureId: id,
+        MessageId: "m1",
+        Ts: 1,
+        Bookmaker: "StablePrice",
+        BookmakerId: 0,
+        SuperOddsType: "1X2",
+        InRunning: false,
+        PriceNames: ["1"],
+        Prices: [2000],
+        Pct: ["50"],
+      },
+    ],
+    oddsValidation: async () => ({}),
+    scoresSnapshot: async () => [],
+    scoreStatValidation: async () => ({}),
+  };
+  const ctl = new AbortController();
+  const src = liveSource({ client, fixtureIds: [1], mode: "poll", pollMs: 60_000 });
+
+  const finished = (async () => {
+    for await (const _e of src.events(ctl.signal)) {
+      ctl.abort();
+    }
+  })();
+
+  const timedOut = await Promise.race([finished.then(() => false), sleep(500).then(() => true)]);
+  assert.equal(timedOut, false, "liveSource did not abort promptly");
 });
