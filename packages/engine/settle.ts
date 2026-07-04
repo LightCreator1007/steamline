@@ -16,7 +16,12 @@ export function settlePosition(
 ): { status: "won" | "lost"; payout: number; pnl: number } {
   const winName = resultToOutcomeName(result);
   if (pos.outcome === winName) {
-    const payout = Math.round(pos.stakePoints * pos.entryOdds);
+    // Mirror the on-chain integer formula: (stake * odds_milli + 500) / 1000,
+    // round half up. stake <= 5e7 and oddsMilli <= ~20000 keep
+    // stakePoints * oddsMilli <= ~1e12, exactly representable as a double, so
+    // Math.round matches the on-chain rounding at exact .5 tie boundaries.
+    const oddsMilli = Math.round(pos.entryOdds * 1000);
+    const payout = Math.round((pos.stakePoints * oddsMilli) / 1000);
     return { status: "won", payout, pnl: payout - pos.stakePoints };
   }
   return { status: "lost", payout: 0, pnl: -pos.stakePoints };

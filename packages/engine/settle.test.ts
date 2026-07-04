@@ -42,3 +42,14 @@ test("payout parity with the on-chain milli formula", () => {
   const r = settlePosition(pos("1", stake, oddsMilli / 1000), "home");
   assert.equal(r.payout, onChain);
 });
+
+test("payout at an exact .5 tie boundary matches the on-chain round-half-up, not float rounding", () => {
+  // 25000575 * 1140 = 28500655500, /1000 = 28500655.5, rounds half up to 28500656.
+  // The old float path (Math.round(stake * entryOdds)) gave 28500655 here.
+  const stake = 25000575;
+  const oddsMilli = 1140; // 1.14
+  const r = settlePosition(pos("1", stake, 1.14), "home");
+  assert.equal(r.payout, Math.round((stake * oddsMilli) / 1000)); // 28500656
+  assert.equal(r.payout, 28500656);
+  assert.equal(r.pnl, r.payout - stake);
+});
