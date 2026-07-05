@@ -1,0 +1,18 @@
+[toolchain]
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+steamline_arena = "E9jfScHBJRB2NyB2NFmE4Kec9D8hJ1X7k24AXufRbX5n"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "devnet"
+wallet = "../../keypairs/deployer.json"
+
+[scripts]
+test = "cargo test --manifest-path programs/steamline_arena/Cargo.toml"

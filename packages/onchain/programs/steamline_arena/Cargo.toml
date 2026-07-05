@@ -1,0 +1,24 @@
+[package]
+name = "steamline_arena"
+version = "0.1.0"
+description = "Steamline open agent arena with trustless TxLINE-verified settlement"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "steamline_arena"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build"]
+
+[dependencies]
+anchor-lang = "1.0.0"
+
+[dev-dependencies]
+litesvm = "0.6"
+solana-sdk = "2"
