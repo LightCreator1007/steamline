@@ -134,3 +134,63 @@ pub fn register(
     send(svm, agent, &[], ix).unwrap();
     book
 }
+
+pub fn open_match(svm: &mut LiteSVM, payer: &Keypair, arena: &Pubkey, fixture_id: u64) -> Pubkey {
+    let (game, _) = match_pda(arena, fixture_id);
+    let ix = Instruction {
+        program_id: PROGRAM_ID,
+        accounts: steamline_arena::accounts::OpenMatch {
+            authority: payer.pubkey(),
+            arena: *arena,
+            game,
+            system_program: anchor_lang::system_program::ID,
+        }
+        .to_account_metas(None),
+        data: steamline_arena::instruction::OpenMatch {
+            fixture_id,
+            start_time: 1_700_000_000,
+        }
+        .data(),
+    };
+    send(svm, payer, &[], ix).unwrap();
+    game
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn open_position(
+    svm: &mut LiteSVM,
+    agent: &Keypair,
+    book: &Pubkey,
+    game: &Pubkey,
+    fixture_id: u64,
+    outcome: u8,
+    stake_points: u64,
+    entry_odds_milli: u32,
+    signal_seq: u64,
+) -> Result<Pubkey, litesvm::types::FailedTransactionMetadata> {
+    let (position, _) = position_pda(game, book, signal_seq);
+    let ix = Instruction {
+        program_id: PROGRAM_ID,
+        accounts: steamline_arena::accounts::OpenPosition {
+            authority: agent.pubkey(),
+            book: *book,
+            game: *game,
+            position,
+            system_program: anchor_lang::system_program::ID,
+        }
+        .to_account_metas(None),
+        data: steamline_arena::instruction::OpenPosition {
+            fixture_id,
+            outcome,
+            stake_points,
+            entry_odds_milli,
+            edge_bps: 200,
+            odds_msg_ref: [7u8; 32],
+            odds_ts: 1_700_000_100,
+            signal_seq,
+        }
+        .data(),
+    };
+    send(svm, agent, &[], ix)?;
+    Ok(position)
+}

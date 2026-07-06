@@ -40,4 +40,33 @@ pub mod steamline_arena {
     pub fn register_agent(ctx: Context<RegisterAgent>, strategy_tag: [u8; 16]) -> Result<()> {
         instructions::register_agent::handler(ctx, strategy_tag)
     }
+
+    pub fn open_match(ctx: Context<OpenMatch>, fixture_id: u64, start_time: i64) -> Result<()> {
+        instructions::open_match::handler(ctx, fixture_id, start_time)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn open_position(
+        ctx: Context<OpenPosition>,
+        fixture_id: u64,
+        outcome: u8,
+        stake_points: u64,
+        entry_odds_milli: u32,
+        edge_bps: i32,
+        odds_msg_ref: [u8; 32],
+        odds_ts: i64,
+        signal_seq: u64,
+    ) -> Result<()> {
+        instructions::open_position::handler(
+            ctx,
+            fixture_id,
+            outcome,
+            stake_points,
+            entry_odds_milli,
+            edge_bps,
+            odds_msg_ref,
+            odds_ts,
+            signal_seq,
+        )
+    }
 }
