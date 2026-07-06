@@ -1,7 +1,7 @@
 import { parseArgs } from "node:util";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { Connection, Keypair, LAMPORTS_PER_SOL, PublicKey, SystemProgram } from "@solana/web3.js";
+import { Connection, Keypair, LAMPORTS_PER_SOL, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 import * as anchor from "@coral-xyz/anchor";
 import { loadEnv, type FeedEnv, type Network } from "./env.ts";
 import { FeedError } from "./txlineClient.ts";
@@ -14,6 +14,25 @@ import { loadCreds, saveCreds } from "./creds.ts";
 const TOKEN_2022_PROGRAM_ID = new PublicKey("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
 const TOKEN_PROGRAM_ID = anchor.utils.token.TOKEN_PROGRAM_ID;
 const ASSOCIATED_TOKEN_PROGRAM_ID = anchor.utils.token.ASSOCIATED_PROGRAM_ID;
+
+// -- Verified devnet address book ----------------------------------------------
+//
+// Mined from successful Txoracle devnet transactions and cross-checked with
+// on-chain PDA derivation. Several of these (the two treasury PDAs) are
+// authority PDAs, not fetchable IDL account types, so the discriminator-scan
+// discovery path in resolveGlobalPda() can never find them -- that's the
+// "no account type in the fetched IDL matches 'usdtTreasuryPda'" failure this
+// book fixes. Used only when env.network === "devnet"; on mainnet (no book
+// yet) the discovery path below still runs unchanged.
+const DEVNET_ADDRESSES = {
+  pricingMatrixPda: new PublicKey("B4hHn1FpD1YPPrcM4yUrQhBPF18zFWgijHLTsumGzeKi"),
+  subscriptionTokenMint: new PublicKey("4Zao8ocPhmMgq7PdsYWyxvqySMGx7xb9cMftPMkEokRG"), // Token-2022
+  tokenTreasuryPda: new PublicKey("Eqqd7rZQGzn2HA9L11NwBMhknxArM3L4KETyUuujK3LB"),
+  tokenTreasuryVault: new PublicKey("dc6rQSPk8GJAeyyAtC1F62JoigmgEuLnW4k9zmgAeuM"),
+  usdtMint: new PublicKey("ELWTKspHKCnCfCiCiqYw1EDH77k8VCP74dK9qytG2Ujh"), // classic SPL
+  usdtTreasuryPda: new PublicKey("DR6Q3pvCy991wMkGXNwdwAZ1jKtiHvVaWxG8mzxNNVW"),
+  usdtTreasuryVault: new PublicKey("D4sW9kqJJDv1A9xz6mZEZtRUZkvFMVskY1c4k4X7RtX9"),
+} as const;
 
 interface IdlAccountItemLike {
   name: string;
@@ -159,17 +178,44 @@ async function scanSingleton(program: anchor.Program, accountTypeName: string, l
   return all[0].publicKey;
 }
 
+// Resolves the IDL account *type* name if the fetched IDL happens to define
+// one for this account (used only for optional decode calls later). Treasury
+// PDAs are authority PDAs with no matching IDL account type -- that's fine,
+// callers must tolerate an undefined typeName and skip decode-dependent work.
+function tryResolveAccountTypeName(idl: anchor.Idl, primaryGuess: string, hints: string[], label: string): string | undefined {
+  try {
+    return resolveAccountTypeName(idl, primaryGuess, hints);
+  } catch (e) {
+    console.log(`  ${label}: ${e instanceof Error ? e.message : String(e)} (non-fatal; decode-dependent steps for this account are skipped)`);
+    return undefined;
+  }
+}
+
 async function resolveGlobalPda(
   connection: Connection,
   programId: PublicKey,
   program: anchor.Program,
   idl: anchor.Idl,
+  network: Network,
+  bookPda: PublicKey | undefined,
   primaryTypeGuess: string,
   typeHints: string[],
   seedGuesses: Buffer[][],
   label: string,
-): Promise<{ pda: PublicKey; typeName: string }> {
-  const typeName = resolveAccountTypeName(idl, primaryTypeGuess, typeHints);
+): Promise<{ pda: PublicKey; typeName: string | undefined }> {
+  const typeName = tryResolveAccountTypeName(idl, primaryTypeGuess, typeHints, label);
+
+  if (network === "devnet" && bookPda) {
+    const info = await connection.getAccountInfo(bookPda);
+    if (info && info.owner.equals(programId)) {
+      console.log(`  ${label}: resolved from verified devnet address book -> ${bookPda.toBase58()}`);
+      return { pda: bookPda, typeName };
+    }
+    console.log(
+      `  ${label}: address book entry ${bookPda.toBase58()} not found on-chain (or owner mismatch); falling back to seed-guess/discovery`,
+    );
+  }
+
   for (const seeds of seedGuesses) {
     const pda = await verifyPda(connection, programId, seeds);
     if (pda) {
@@ -178,9 +224,40 @@ async function resolveGlobalPda(
       return { pda, typeName };
     }
   }
+
+  if (!typeName) {
+    throw new FeedError(
+      "NETWORK",
+      `${label}: address book entry missing/stale, seed guesses missed, and no IDL account type available to scan by discriminator`,
+    );
+  }
   console.log(`  ${label}: seed guesses missed, scanning program accounts by discriminator...`);
   const pda = await scanSingleton(program, typeName, label);
   return { pda, typeName };
+}
+
+// Resolves a per-protocol token vault/mint address that isn't a Txoracle-owned
+// PDA (so no owner==programId check applies): devnet address book first,
+// falling back to a computed value (e.g. ATA derivation) if the book entry is
+// stale or missing.
+async function resolveBookOrCompute(
+  connection: Connection,
+  network: Network,
+  bookAddress: PublicKey | undefined,
+  computeFallback: () => PublicKey,
+  label: string,
+): Promise<PublicKey> {
+  if (network === "devnet" && bookAddress) {
+    const info = await connection.getAccountInfo(bookAddress);
+    if (info) {
+      console.log(`  ${label}: resolved from verified devnet address book -> ${bookAddress.toBase58()}`);
+      return bookAddress;
+    }
+    console.log(`  ${label}: address book entry ${bookAddress.toBase58()} not found on-chain; falling back to computed value`);
+  }
+  const computed = computeFallback();
+  console.log(`  ${label}: computed -> ${computed.toBase58()}`);
+  return computed;
 }
 
 async function decodeAccount(program: anchor.Program, accountTypeName: string, pubkey: PublicKey): Promise<Record<string, unknown> | null> {
@@ -234,7 +311,7 @@ async function resolveMint(
   idl: anchor.Idl,
   program: anchor.Program,
   constHints: string[],
-  decodeCandidates: { typeName: string; pubkey: PublicKey }[],
+  decodeCandidates: { typeName: string | undefined; pubkey: PublicKey }[],
   fieldHints: string[],
   label: string,
 ): Promise<PublicKey> {
@@ -244,6 +321,7 @@ async function resolveMint(
     return fromConst;
   }
   for (const cand of decodeCandidates) {
+    if (!cand.typeName) continue;
     const data = await decodeAccount(program, cand.typeName, cand.pubkey);
     if (!data) continue;
     const found = findPubkeyField(data, fieldHints);
@@ -258,16 +336,47 @@ async function resolveMint(
   );
 }
 
+// Devnet address book first (verified existence on-chain), falling back to
+// the IDL-constant/decode discovery path in resolveMint() if the book entry
+// goes stale or this runs on mainnet (no book yet).
+async function resolveMintWithBook(
+  connection: Connection,
+  network: Network,
+  bookMint: PublicKey | undefined,
+  idl: anchor.Idl,
+  program: anchor.Program,
+  constHints: string[],
+  decodeCandidates: { typeName: string | undefined; pubkey: PublicKey }[],
+  fieldHints: string[],
+  label: string,
+): Promise<PublicKey> {
+  if (network === "devnet" && bookMint) {
+    const info = await connection.getAccountInfo(bookMint);
+    if (info) {
+      console.log(`  ${label}: resolved from verified devnet address book -> ${bookMint.toBase58()}`);
+      return bookMint;
+    }
+    console.log(`  ${label}: address book mint ${bookMint.toBase58()} not found on-chain; falling back to discovery`);
+  }
+  return resolveMint(idl, program, constHints, decodeCandidates, fieldHints, label);
+}
+
 async function resolveTxlineAmount(
   program: anchor.Program,
   pricingMatrixPda: PublicKey,
-  pricingMatrixType: string,
+  pricingMatrixType: string | undefined,
   level: number,
   txlineAmountFlag: string | undefined,
 ): Promise<anchor.BN> {
   if (txlineAmountFlag) {
     console.log(`  purchase amount: using --txline-amount ${txlineAmountFlag}`);
     return new anchor.BN(txlineAmountFlag);
+  }
+  if (!pricingMatrixType) {
+    throw new FeedError(
+      "NETWORK",
+      `PricingMatrix has no matching account type in the fetched IDL, cannot decode automatically; pass --txline-amount explicitly`,
+    );
   }
   const data = await decodeAccount(program, pricingMatrixType, pricingMatrixPda);
   if (!data) {
@@ -311,28 +420,88 @@ async function resolveTxlineAmount(
 
 // -- Instruction steps ----------------------------------------------------------
 
-async function stepRequestDevnetFaucet(
+// The faucet_tracker PDA's seeds are unknown (Txoracle exposes no IDL account
+// type or const to confirm them). Instead of guessing once, this tries a
+// short list of candidates in order and uses connection.simulateTransaction
+// to find the right one: a clean simulation or an "already claimed"-style
+// failure both indicate the right PDA; a seeds/uninitialized-style failure
+// means the candidate is wrong and the next one is tried.
+async function resolveAndRunFaucet(
+  connection: Connection,
   program: anchor.Program,
   idl: anchor.Idl,
+  programId: PublicKey,
+  kp: Keypair,
   user: PublicKey,
-  faucetTrackerPda: PublicKey,
   usdtMint: PublicKey,
   userUsdtAta: PublicKey,
   usdtTreasuryPda: PublicKey,
-): Promise<string> {
-  const accounts = {
+): Promise<void> {
+  const candidates: { seeds: Buffer[]; label: string }[] = [
+    { seeds: [Buffer.from("faucet_tracker"), user.toBuffer()], label: '["faucet_tracker", user]' },
+    { seeds: [Buffer.from("faucet"), user.toBuffer()], label: '["faucet", user]' },
+    { seeds: [Buffer.from("faucet_tracker")], label: '["faucet_tracker"]' },
+  ];
+  const alreadyClaimedPattern = /already in use|already claimed|alreadyclaimed|already initialized/i;
+  const errors: string[] = [];
+
+  const buildAccounts = (faucetTracker: PublicKey) => ({
     user,
-    faucetTracker: faucetTrackerPda,
+    faucetTracker,
     usdtMint,
     userUsdtAta,
     usdtTreasuryPda,
     tokenProgram: TOKEN_PROGRAM_ID,
     associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
     systemProgram: SystemProgram.programId,
-  };
-  const builder = program.methods.requestDevnetFaucet().accounts(accounts);
-  await assertNoMissingAccounts(idl, "requestDevnetFaucet", builder, "request_devnet_faucet");
-  return builder.rpc();
+  });
+
+  // The account field-name shape is identical across candidates (only the
+  // faucetTracker pubkey changes), so check it once and fail fast/fatally if
+  // the IDL account list doesn't match, instead of folding it into the
+  // per-candidate simulation loop below.
+  const [firstCandidatePda] = PublicKey.findProgramAddressSync(candidates[0].seeds, programId);
+  await assertNoMissingAccounts(
+    idl,
+    "requestDevnetFaucet",
+    program.methods.requestDevnetFaucet().accounts(buildAccounts(firstCandidatePda)),
+    "request_devnet_faucet",
+  );
+
+  for (const c of candidates) {
+    const [candidatePda] = PublicKey.findProgramAddressSync(c.seeds, programId);
+    try {
+      const builder = program.methods.requestDevnetFaucet().accounts(buildAccounts(candidatePda));
+      const ix = await builder.instruction();
+      const tx = new Transaction().add(ix);
+      tx.feePayer = kp.publicKey;
+      tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+      tx.sign(kp);
+      const sim = await connection.simulateTransaction(tx);
+      const simText = `${JSON.stringify(sim.value.err)} logs: ${(sim.value.logs ?? []).join(" | ")}`;
+
+      if (!sim.value.err) {
+        console.log(`  faucet_tracker: candidate ${c.label} -> ${candidatePda.toBase58()} won (simulation clean)`);
+        const sig = await builder.rpc();
+        console.log(`request_devnet_faucet: ${sig}`);
+        return;
+      }
+      if (alreadyClaimedPattern.test(simText)) {
+        console.log(
+          `  faucet_tracker: candidate ${c.label} -> ${candidatePda.toBase58()} won (simulation failed with an already-claimed-style error, treated as the correct account)`,
+        );
+        console.log("request_devnet_faucet: skipped, wallet already claimed the faucet");
+        return;
+      }
+      errors.push(`  ${c.label} -> ${candidatePda.toBase58()}: ${simText}`);
+    } catch (e) {
+      errors.push(`  ${c.label} -> ${candidatePda.toBase58()}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  console.log(
+    `request_devnet_faucet: none of the 3 seed candidates resolved (wrong-seed-style errors on all); continuing to purchase step, the wallet may already hold USDT. Simulation errors:\n${errors.join("\n")}`,
+  );
 }
 
 async function stepPurchase(
@@ -424,12 +593,14 @@ async function probe(env: FeedEnv): Promise<void> {
       programId,
       program,
       idl,
+      env.network,
+      env.network === "devnet" ? DEVNET_ADDRESSES.pricingMatrixPda : undefined,
       "pricingMatrix",
       ["pricing"],
       [[Buffer.from("pricing_matrix")]],
       "pricing_matrix",
     );
-    const data = await decodeAccount(program, typeName, pda);
+    const data = typeName ? await decodeAccount(program, typeName, pda) : null;
     if (data) {
       console.log(`PricingMatrix @ ${pda.toBase58()}:`);
       console.log(JSON.stringify(data, jsonReplacer, 2));
@@ -468,26 +639,30 @@ async function subscribeCommand(env: FeedEnv, level: number, weeks: number, txli
   const user = kp.publicKey;
 
   console.log("resolving on-chain accounts...");
+  const devnetBook = env.network === "devnet" ? DEVNET_ADDRESSES : undefined;
+
   const { pda: pricingMatrixPda, typeName: pricingMatrixType } = await resolveGlobalPda(
-    connection, programId, program, idl,
+    connection, programId, program, idl, env.network, devnetBook?.pricingMatrixPda,
     "pricingMatrix", ["pricing"], [[Buffer.from("pricing_matrix")]], "pricing_matrix",
   );
   const { pda: usdtTreasuryPda, typeName: usdtTreasuryType } = await resolveGlobalPda(
-    connection, programId, program, idl,
+    connection, programId, program, idl, env.network, devnetBook?.usdtTreasuryPda,
     "usdtTreasuryPda", ["usdttreasury", "usdt_treasury", "usdt"], [[Buffer.from("usdt_treasury")]], "usdt_treasury_pda",
   );
   const { pda: tokenTreasuryPda, typeName: tokenTreasuryType } = await resolveGlobalPda(
-    connection, programId, program, idl,
+    connection, programId, program, idl, env.network, devnetBook?.tokenTreasuryPda,
     "tokenTreasuryPda", ["tokentreasury", "token_treasury"], [[Buffer.from("token_treasury")]], "token_treasury_pda",
   );
 
-  const usdtMint = await resolveMint(
-    idl, program, ["usdtmint", "usdt_mint", "usdt"],
+  const usdtMint = await resolveMintWithBook(
+    connection, env.network, devnetBook?.usdtMint, idl, program,
+    ["usdtmint", "usdt_mint", "usdt"],
     [{ typeName: usdtTreasuryType, pubkey: usdtTreasuryPda }],
     ["mint"], "usdt_mint",
   );
-  const subscriptionTokenMint = await resolveMint(
-    idl, program, ["subscriptiontoken", "tokenmint", "token_mint", "txline", "subscription"],
+  const subscriptionTokenMint = await resolveMintWithBook(
+    connection, env.network, devnetBook?.subscriptionTokenMint, idl, program,
+    ["subscriptiontoken", "tokenmint", "token_mint", "txline", "subscription"],
     [
       { typeName: tokenTreasuryType, pubkey: tokenTreasuryPda },
       { typeName: pricingMatrixType, pubkey: pricingMatrixPda },
@@ -498,17 +673,20 @@ async function subscribeCommand(env: FeedEnv, level: number, weeks: number, txli
   const usdtTokenProgramId = await tokenProgramForMint(connection, usdtMint, "usdt");
   const subTokenProgramId = await tokenProgramForMint(connection, subscriptionTokenMint, "subscription_token");
 
+  // User-side ATAs are session-specific (depend on this wallet), so they're
+  // always computed, never looked up in the book.
   const userUsdtAta = associatedAddressFor(usdtMint, user, usdtTokenProgramId);
-  const usdtTreasuryVault = associatedAddressFor(usdtMint, usdtTreasuryPda, usdtTokenProgramId);
   const userTokenAccount = associatedAddressFor(subscriptionTokenMint, user, subTokenProgramId);
-  const tokenTreasuryVault = associatedAddressFor(subscriptionTokenMint, tokenTreasuryPda, subTokenProgramId);
 
-  const [faucetTrackerPda] = PublicKey.findProgramAddressSync([Buffer.from("faucet_tracker"), user.toBuffer()], programId);
-  const faucetInfo = await connection.getAccountInfo(faucetTrackerPda);
-  console.log(
-    `  faucet_tracker: derived -> ${faucetTrackerPda.toBase58()} (${
-      faucetInfo ? "already exists, faucet is likely already claimed" : "does not exist yet, will be created by request_devnet_faucet"
-    })`,
+  const usdtTreasuryVault = await resolveBookOrCompute(
+    connection, env.network, devnetBook?.usdtTreasuryVault,
+    () => associatedAddressFor(usdtMint, usdtTreasuryPda, usdtTokenProgramId),
+    "usdt_treasury_vault",
+  );
+  const tokenTreasuryVault = await resolveBookOrCompute(
+    connection, env.network, devnetBook?.tokenTreasuryVault,
+    () => associatedAddressFor(subscriptionTokenMint, tokenTreasuryPda, subTokenProgramId),
+    "token_treasury_vault",
   );
 
   console.log(
@@ -519,17 +697,7 @@ async function subscribeCommand(env: FeedEnv, level: number, weeks: number, txli
   if (env.network === "mainnet") {
     console.log("request_devnet_faucet: skipped (mainnet has no faucet)");
   } else {
-    try {
-      const sig = await stepRequestDevnetFaucet(program, idl, user, faucetTrackerPda, usdtMint, userUsdtAta, usdtTreasuryPda);
-      console.log(`request_devnet_faucet: ${sig}`);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (/already in use|already claimed|alreadyclaimed|already initialized/i.test(msg)) {
-        console.log(`request_devnet_faucet: skipped, wallet already claimed the faucet (${msg})`);
-      } else {
-        throw new FeedError("NETWORK", `request_devnet_faucet failed: ${msg}`);
-      }
-    }
+    await resolveAndRunFaucet(connection, program, idl, programId, kp, user, usdtMint, userUsdtAta, usdtTreasuryPda);
   }
 
   const txlineAmount = await resolveTxlineAmount(program, pricingMatrixPda, pricingMatrixType, level, txlineAmountFlag);
