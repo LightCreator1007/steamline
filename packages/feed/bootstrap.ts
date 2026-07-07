@@ -19,11 +19,11 @@ const ASSOCIATED_TOKEN_PROGRAM_ID = anchor.utils.token.ASSOCIATED_PROGRAM_ID;
 //
 // Mined from successful Txoracle devnet transactions and cross-checked with
 // on-chain PDA derivation. Several of these (the two treasury PDAs) are
-// authority PDAs, not fetchable IDL account types, so the discriminator-scan
-// discovery path in resolveGlobalPda() can never find them -- that's the
-// "no account type in the fetched IDL matches 'usdtTreasuryPda'" failure this
-// book fixes. Used only when env.network === "devnet"; on mainnet (no book
-// yet) the discovery path below still runs unchanged.
+// authority PDAs: they never hold decodable data and are not guaranteed to
+// exist on-chain at all, so resolveGlobalPda()'s strict existence check is
+// structurally impossible for them -- that's what resolveAuthorityPda()
+// handles instead. Used only when env.network === "devnet"; on mainnet (no
+// book yet) the seed-derivation/discovery paths still run unchanged.
 const DEVNET_ADDRESSES = {
   pricingMatrixPda: new PublicKey("B4hHn1FpD1YPPrcM4yUrQhBPF18zFWgijHLTsumGzeKi"),
   subscriptionTokenMint: new PublicKey("4Zao8ocPhmMgq7PdsYWyxvqySMGx7xb9cMftPMkEokRG"), // Token-2022
@@ -156,6 +156,24 @@ async function verifyPda(connection: Connection, programId: PublicKey, seeds: Bu
   return undefined;
 }
 
+// Minimal RPC surface resolveAuthorityPda needs, kept narrow (rather than the
+// full Connection class) so tests can inject a fake without a live RPC.
+export interface AccountInfoLookup {
+  getAccountInfo(pubkey: PublicKey): Promise<{ owner: PublicKey; data: Buffer } | null>;
+}
+
+const TOKEN_ACCOUNT_OWNER_OFFSET = 32;
+const TOKEN_ACCOUNT_OWNER_END = 64;
+
+// Token account layout is identical for the first 165 bytes across the
+// classic Token program and Token-2022 (extensions start after that), so the
+// owner field can be read straight from raw bytes without a full decoder.
+function tokenAccountOwner(info: { owner: PublicKey; data: Buffer }): PublicKey | undefined {
+  if (!info.owner.equals(TOKEN_PROGRAM_ID) && !info.owner.equals(TOKEN_2022_PROGRAM_ID)) return undefined;
+  if (info.data.length < TOKEN_ACCOUNT_OWNER_END) return undefined;
+  return new PublicKey(info.data.subarray(TOKEN_ACCOUNT_OWNER_OFFSET, TOKEN_ACCOUNT_OWNER_END));
+}
+
 async function scanSingleton(program: anchor.Program, accountTypeName: string, label: string): Promise<PublicKey> {
   const ns = (program.account as Record<string, { all(): Promise<{ publicKey: PublicKey }[]> }>)[accountTypeName];
   if (!ns) throw new FeedError("NETWORK", `${label}: no '${accountTypeName}' account client on the program object`);
@@ -234,6 +252,61 @@ async function resolveGlobalPda(
   console.log(`  ${label}: seed guesses missed, scanning program accounts by discriminator...`);
   const pda = await scanSingleton(program, typeName, label);
   return { pda, typeName };
+}
+
+// Resolves an *authority* PDA: one that signs CPIs but never holds decodable
+// data itself, so it need not exist on-chain or be program-owned (unlike
+// resolveGlobalPda's strict existence check, which is structurally
+// impossible for these -- e.g. the treasury PDAs, which either aren't
+// allocated at all or are owned by the System Program with zero space).
+// Ladder, in order:
+//   1. book PDA matches a seed-guess derivation -> accept, no RPC needed
+//   2. book vault's decoded token-account owner field == book PDA -> accept
+//   3. book PDA present but neither check passed -> fall through, log it
+//   4. no usable book entry (e.g. mainnet) -> compute from the first seed
+//      guess and accept, unverified
+export async function resolveAuthorityPda(
+  connection: AccountInfoLookup,
+  programId: PublicKey,
+  idl: anchor.Idl,
+  bookPda: PublicKey | undefined,
+  bookVault: PublicKey | undefined,
+  primaryTypeGuess: string,
+  typeHints: string[],
+  seedGuesses: Buffer[][],
+  label: string,
+): Promise<{ pda: PublicKey; typeName: string | undefined }> {
+  const typeName = tryResolveAccountTypeName(idl, primaryTypeGuess, typeHints, label);
+
+  if (bookPda) {
+    for (const seeds of seedGuesses) {
+      const [derived] = PublicKey.findProgramAddressSync(seeds, programId);
+      if (derived.equals(bookPda)) {
+        console.log(`  ${label}: verified by seed derivation -> ${bookPda.toBase58()}`);
+        return { pda: bookPda, typeName };
+      }
+    }
+
+    if (bookVault) {
+      const vaultInfo = await connection.getAccountInfo(bookVault);
+      const owner = vaultInfo ? tokenAccountOwner(vaultInfo) : undefined;
+      if (owner && owner.equals(bookPda)) {
+        console.log(`  ${label}: verified by treasury vault ownership -> ${bookPda.toBase58()}`);
+        return { pda: bookPda, typeName };
+      }
+    }
+
+    console.log(
+      `  ${label}: book entry ${bookPda.toBase58()} did not verify by seed derivation or vault ownership; falling back to computed seeds`,
+    );
+  }
+
+  if (seedGuesses.length === 0) {
+    throw new FeedError("NETWORK", `${label}: no seed guesses available to compute an authority PDA`);
+  }
+  const [computed] = PublicKey.findProgramAddressSync(seedGuesses[0], programId);
+  console.log(`  ${label}: computed from seeds, unverified (authority PDA) -> ${computed.toBase58()}`);
+  return { pda: computed, typeName };
 }
 
 // Resolves a per-protocol token vault/mint address that isn't a Txoracle-owned
@@ -645,12 +718,12 @@ async function subscribeCommand(env: FeedEnv, level: number, weeks: number, txli
     connection, programId, program, idl, env.network, devnetBook?.pricingMatrixPda,
     "pricingMatrix", ["pricing"], [[Buffer.from("pricing_matrix")]], "pricing_matrix",
   );
-  const { pda: usdtTreasuryPda, typeName: usdtTreasuryType } = await resolveGlobalPda(
-    connection, programId, program, idl, env.network, devnetBook?.usdtTreasuryPda,
+  const { pda: usdtTreasuryPda, typeName: usdtTreasuryType } = await resolveAuthorityPda(
+    connection, programId, idl, devnetBook?.usdtTreasuryPda, devnetBook?.usdtTreasuryVault,
     "usdtTreasuryPda", ["usdttreasury", "usdt_treasury", "usdt"], [[Buffer.from("usdt_treasury")]], "usdt_treasury_pda",
   );
-  const { pda: tokenTreasuryPda, typeName: tokenTreasuryType } = await resolveGlobalPda(
-    connection, programId, program, idl, env.network, devnetBook?.tokenTreasuryPda,
+  const { pda: tokenTreasuryPda, typeName: tokenTreasuryType } = await resolveAuthorityPda(
+    connection, programId, idl, devnetBook?.tokenTreasuryPda, devnetBook?.tokenTreasuryVault,
     "tokenTreasuryPda", ["tokentreasury", "token_treasury"], [[Buffer.from("token_treasury")]], "token_treasury_pda",
   );
 
@@ -780,7 +853,9 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((e) => {
-  console.error(e instanceof Error ? e.message : String(e));
-  process.exitCode = 1;
-});
+if (process.argv[1]?.endsWith("bootstrap.ts")) {
+  main().catch((e) => {
+    console.error(e instanceof Error ? e.message : String(e));
+    process.exitCode = 1;
+  });
+}
