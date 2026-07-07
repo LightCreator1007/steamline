@@ -231,6 +231,26 @@ pub fn settle_match(
     send(svm, payer, &[], ix)
 }
 
+pub fn settle_position(
+    svm: &mut LiteSVM,
+    payer: &Keypair,
+    game: &Pubkey,
+    position: &Pubkey,
+    book: &Pubkey,
+) -> Result<(), litesvm::types::FailedTransactionMetadata> {
+    let ix = Instruction {
+        program_id: PROGRAM_ID,
+        accounts: steamline_arena::accounts::SettlePosition {
+            game: *game,
+            position: *position,
+            book: *book,
+        }
+        .to_account_metas(None),
+        data: steamline_arena::instruction::SettlePosition {}.data(),
+    };
+    send(svm, payer, &[], ix)
+}
+
 pub fn void_match(
     svm: &mut LiteSVM,
     payer: &Keypair,

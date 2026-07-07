@@ -92,4 +92,8 @@ pub mod steamline_arena {
     pub fn void_match(ctx: Context<VoidMatch>, fixture_id: u64) -> Result<()> {
         instructions::void_match::handler(ctx, fixture_id)
     }
+
+    pub fn settle_position(ctx: Context<SettlePosition>) -> Result<()> {
+        instructions::settle_position::handler(ctx)
+    }
 }
