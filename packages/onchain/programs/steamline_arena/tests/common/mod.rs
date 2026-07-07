@@ -194,3 +194,59 @@ pub fn open_position(
     send(svm, agent, &[], ix)?;
     Ok(position)
 }
+
+pub fn settle_match(
+    svm: &mut LiteSVM,
+    payer: &Keypair,
+    arena: &Pubkey,
+    game: &Pubkey,
+    fixture_id: u64,
+    home: u16,
+    away: u16,
+) -> Result<(), litesvm::types::FailedTransactionMetadata> {
+    let outcome = if home > away {
+        0
+    } else if home < away {
+        2
+    } else {
+        1
+    };
+    let ix = Instruction {
+        program_id: PROGRAM_ID,
+        accounts: steamline_arena::accounts::SettleMatch {
+            authority: payer.pubkey(),
+            arena: *arena,
+            game: *game,
+        }
+        .to_account_metas(None),
+        data: steamline_arena::instruction::SettleMatch {
+            fixture_id,
+            home_score: home,
+            away_score: away,
+            settled_outcome: outcome,
+            score_proof_ref: [0u8; 32],
+        }
+        .data(),
+    };
+    send(svm, payer, &[], ix)
+}
+
+pub fn void_match(
+    svm: &mut LiteSVM,
+    payer: &Keypair,
+    arena: &Pubkey,
+    game: &Pubkey,
+    fixture_id: u64,
+) -> Result<(), litesvm::types::FailedTransactionMetadata> {
+    let ix = Instruction {
+        program_id: PROGRAM_ID,
+        accounts: steamline_arena::accounts::VoidMatch {
+            authority: payer.pubkey(),
+            arena: *arena,
+            game: *game,
+        }
+        .to_account_metas(None),
+        data: steamline_arena::instruction::VoidMatch { fixture_id }.data(),
+    };
+    send(svm, payer, &[], ix)
+}

@@ -69,4 +69,27 @@ pub mod steamline_arena {
             signal_seq,
         )
     }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn settle_match(
+        ctx: Context<SettleMatch>,
+        fixture_id: u64,
+        home_score: u16,
+        away_score: u16,
+        settled_outcome: u8,
+        score_proof_ref: [u8; 32],
+    ) -> Result<()> {
+        instructions::settle_match::handler(
+            ctx,
+            fixture_id,
+            home_score,
+            away_score,
+            settled_outcome,
+            score_proof_ref,
+        )
+    }
+
+    pub fn void_match(ctx: Context<VoidMatch>, fixture_id: u64) -> Result<()> {
+        instructions::void_match::handler(ctx, fixture_id)
+    }
 }
