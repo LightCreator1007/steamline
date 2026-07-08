@@ -39,6 +39,26 @@ fn winning_position_pays_parity_amount_and_updates_equity() {
 }
 
 #[test]
+fn winning_position_tie_boundary_pays_hardcoded_parity() {
+    let (mut svm, payer) = setup();
+    let arena = init_arena(&mut svm, &payer, 2026);
+    let agent = Keypair::new();
+    let book = register(&mut svm, &payer, &arena, &agent, [1u8; 16]);
+    let game = open_match(&mut svm, &payer, &arena, 42);
+    let stake = 1_500u64;
+    let odds = 2001u32; // 2.001
+                        // outcome 0 (home), match ends 2-1 -> home wins.
+    let pos = open_position(&mut svm, &agent, &book, &game, 42, 0, stake, odds, 0).unwrap();
+    settle_match(&mut svm, &payer, &arena, &game, 42, 2, 1).unwrap();
+    settle_position(&mut svm, &payer, &game, &pos, &book).unwrap();
+
+    let p: Position = load(&svm, &pos);
+    assert_eq!(p.status, POS_WON);
+    // tie boundary: 1500 * 2001 = 3_001_500, mod 1000 == 500; round-half-up -> 3002 (matches JS Math.round(3001.5))
+    assert_eq!(p.payout_points, 3002);
+}
+
+#[test]
 fn parity_with_engine_odd_boundary() {
     // stake 12345, odds 2.137 -> round_half_up(12345*2137/1000) matches settle.ts.
     let (mut svm, payer) = setup();
