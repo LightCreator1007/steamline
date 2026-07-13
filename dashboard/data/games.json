@@ -1,0 +1,7 @@
+[
+  { "id": 18209181, "home": "France", "away": "Morocco", "stage": "Quarter-final", "date": "Jul 9", "final": "2-0" },
+  { "id": 18218149, "home": "Spain", "away": "Belgium", "stage": "Quarter-final", "date": "Jul 10", "final": "2-1" },
+  { "id": 18213979, "home": "Norway", "away": "England", "stage": "Quarter-final", "date": "Jul 11", "final": "1-2", "onchain": true },
+  { "id": 18222446, "home": "Argentina", "away": "Switzerland", "stage": "Quarter-final", "date": "Jul 12", "final": "3-1" },
+  { "id": 18237038, "home": "France", "away": "Spain", "stage": "Semi-final", "date": "Jul 14 · 19:00 UTC", "live": true }
+]

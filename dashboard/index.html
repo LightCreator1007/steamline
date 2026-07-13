@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Steamline · on-chain steam-trading arena</title>
+<title>Steamline · replay real World Cup steam moves through the live engine</title>
 <style>
   :root {
     --field: #0a0e1e;
@@ -15,46 +15,86 @@
     --odds: #ffd84d;
     --follow: #71d98c;
     --fade: #ff7a5c;
-    --draw: #8b93b8;
   }
   * { box-sizing: border-box; margin: 0; }
   html { background: var(--field); }
   body {
     font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
     color: var(--ink);
-    max-width: 980px;
+    max-width: 1020px;
     margin: 0 auto;
-    padding: 28px 20px 60px;
+    padding: 26px 20px 60px;
     font-size: 14px;
     line-height: 1.5;
   }
   a { color: var(--cyan); text-decoration: none; }
   a:hover, a:focus-visible { text-decoration: underline; outline-offset: 2px; }
-  header { border-top: 3px double var(--rule); border-bottom: 3px double var(--rule); padding: 14px 0; margin-bottom: 6px; }
-  .masthead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px 18px; }
+  button { font: inherit; cursor: pointer; }
+  header { border-top: 3px double var(--rule); border-bottom: 3px double var(--rule); padding: 13px 0; }
+  .masthead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 18px; }
   .masthead h1 { font-size: 22px; letter-spacing: 0.38em; font-weight: 700; }
   .masthead h1 .tail { color: var(--odds); }
   .masthead .meta { color: var(--dim); font-size: 12px; margin-left: auto; }
-  .matchline { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; padding: 12px 0 4px; }
+  .tagline { color: var(--dim); font-size: 12px; padding: 8px 0 0; }
+
+  .eyebrow { color: var(--cyan); font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase; margin: 24px 0 8px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+  #rail { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+  .gcard { text-align: left; background: var(--panel); border: 1px solid var(--rule); color: var(--ink); padding: 10px 12px; display: flex; flex-direction: column; gap: 3px; }
+  .gcard:hover, .gcard:focus-visible { border-color: var(--cyan); }
+  .gcard.active { border-color: var(--odds); }
+  .gcard .teams { font-weight: 700; }
+  .gcard .sub { color: var(--dim); font-size: 11px; }
+  .chainchip { color: var(--follow); font-size: 11px; }
+  .simchip { color: var(--cyan); font-size: 11px; }
+  .livechip { color: var(--fade); font-size: 11px; }
+  .gcard.live { border-style: dashed; opacity: 0.85; }
+  #liveNote { color: var(--fade); font-size: 12px; margin-top: 6px; min-height: 18px; }
+
+  .matchline { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 14px; padding: 14px 0 2px; }
   .matchline .label { font-size: 17px; font-weight: 700; }
   .chip { border: 1px solid var(--rule); padding: 1px 9px; border-radius: 2px; font-size: 12px; color: var(--cyan); }
-  .chip.final { color: var(--odds); border-color: var(--odds); }
-  .eyebrow { color: var(--cyan); font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase; margin: 26px 0 8px; }
-  .tapewrap { border: 1px solid var(--rule); background: var(--panel); padding: 10px 12px 4px; overflow-x: auto; }
+
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; background: var(--panel); border: 1px solid var(--rule); padding: 10px 12px; font-size: 12px; }
+  .controls button { background: none; border: 1px solid var(--rule); color: var(--cyan); padding: 2px 12px; }
+  .controls button:hover { border-color: var(--cyan); }
+  .controls select { font: inherit; background: var(--field); color: var(--ink); border: 1px solid var(--rule); padding: 1px 6px; }
+  .knob { display: flex; align-items: center; gap: 8px; color: var(--dim); }
+  .knob input[type=range] { accent-color: #ffd84d; width: 110px; }
+  .knob .val { color: var(--odds); min-width: 44px; }
+
+  #board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px; }
+  .tile { background: var(--panel); border: 1px solid var(--rule); text-align: center; padding: 10px 6px; }
+  .tile .tname { color: var(--cyan); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; }
+  .tile .todds { color: var(--odds); font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.25; }
+  .tile .tprob { color: var(--dim); font-size: 12px; }
+
+  .tapewrap { border: 1px solid var(--rule); background: var(--panel); padding: 10px 12px 4px; overflow-x: auto; margin-top: 12px; }
   .tapewrap svg { display: block; width: 100%; height: 150px; min-width: 480px; }
   .legend { display: flex; gap: 18px; font-size: 12px; color: var(--dim); padding: 6px 2px 8px; flex-wrap: wrap; }
   .k { display: inline-block; width: 14px; height: 3px; vertical-align: middle; margin-right: 6px; }
-  .books { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
-  .book { border: 1px solid var(--rule); background: var(--panel); padding: 14px 16px; }
-  .book h2 { font-size: 13px; letter-spacing: 0.2em; text-transform: uppercase; }
+
+  .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+  @media (max-width: 760px) { .duo { grid-template-columns: 1fr; } }
+  #books { display: grid; gap: 10px; }
+  .book { border: 1px solid var(--rule); background: var(--panel); padding: 12px 14px; }
+  .book h2 { font-size: 13px; letter-spacing: 0.2em; text-transform: uppercase; display: inline; }
   .book.follow h2 { color: var(--follow); }
   .book.fade h2 { color: var(--fade); }
-  .book .strat { color: var(--dim); font-size: 12px; margin-bottom: 10px; }
-  .stat { display: flex; justify-content: space-between; border-top: 1px dotted var(--rule); padding: 5px 0; font-variant-numeric: tabular-nums; }
+  .book .strat { color: var(--dim); font-size: 11px; margin-bottom: 6px; }
+  .stat { display: flex; justify-content: space-between; border-top: 1px dotted var(--rule); padding: 4px 0; font-variant-numeric: tabular-nums; }
   .stat .v { color: var(--odds); }
   .stat .v.neg { color: var(--fade); }
   .stat .v.pos { color: var(--follow); }
-  .book .addr { font-size: 11px; margin-top: 10px; word-break: break-all; }
+
+  #feed { display: flex; flex-direction: column; gap: 6px; max-height: 340px; overflow-y: auto; }
+  .ev { border: 1px solid var(--rule); background: var(--panel); padding: 7px 10px; font-size: 12.5px; }
+  .ev.steam { border-color: var(--fade); color: var(--fade); }
+  .ev.follow b:first-child { color: var(--follow); }
+  .ev.fade b:first-child { color: var(--fade); }
+  .ev.hold { color: var(--dim); }
+
+  .finalbox { border: 1px solid var(--odds); color: var(--odds); display: inline-block; padding: 4px 14px; font-weight: 700; margin-bottom: 10px; }
   table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
   .tablewrap { overflow-x: auto; border: 1px solid var(--rule); background: var(--panel); }
   th, td { text-align: right; padding: 7px 12px; border-bottom: 1px dotted var(--rule); white-space: nowrap; }
@@ -66,191 +106,73 @@
   td .lost { color: var(--fade); }
   td.odds { color: var(--odds); }
   .note { color: var(--dim); font-size: 12px; margin-top: 8px; }
+
   footer { margin-top: 40px; border-top: 3px double var(--rule); padding-top: 14px; color: var(--dim); font-size: 12px; }
   footer p { margin-bottom: 6px; }
-  .status { color: var(--dim); font-size: 12px; }
-  @media (prefers-reduced-motion: no-preference) {
-    .tapewrap svg path.line { stroke-dasharray: 3000; stroke-dashoffset: 3000; animation: draw 1.6s ease-out forwards; }
-    @keyframes draw { to { stroke-dashoffset: 0; } }
-  }
 </style>
 </head>
 <body>
 <header>
   <div class="masthead">
     <h1>STEAM<span class="tail">LINE</span></h1>
-    <span class="meta" id="meta">loading run state...</span>
+    <span class="meta">autonomous steam-move trading · Solana devnet arena · TxLINE World Cup feed</span>
   </div>
+  <p class="tagline">Pick a real match below. Its captured TxLINE odds replay through the live detection
+  engine in your browser: signals fire, two rival agents trade, the real final score settles the books.
+  Turn the knobs and replay to re-analyze any game.</p>
 </header>
+
+<div class="eyebrow">Matches · real captured data</div>
+<div id="rail"></div>
+<p id="liveNote"></p>
 
 <div class="matchline" id="matchline"></div>
 
-<div class="eyebrow">Probability tape · consensus line, vig removed</div>
+<div class="controls">
+  <button id="play">play</button>
+  <button id="skip">skip to result</button>
+  <button id="restart">replay</button>
+  <label>speed <select id="speed">
+    <option value="120">fast</option>
+    <option value="40" selected>very fast</option>
+    <option value="300">readable</option>
+  </select></label>
+  <span class="knob">threshold <input type="range" id="theta" min="0.2" max="3" step="0.1" value="1">
+    <span class="val" id="thetaVal">1pp</span></span>
+  <span class="knob">edge floor <input type="range" id="edge" min="0" max="2" step="0.1" value="0.5">
+    <span class="val" id="edgeVal">0.5%</span></span>
+</div>
+
+<div id="board"></div>
+
 <div class="tapewrap"><svg id="tape" preserveAspectRatio="none" role="img" aria-label="Fair probability of each outcome over the pre-match window, with steam signal markers"></svg></div>
 <div class="legend" id="legend"></div>
 
-<div class="eyebrow">Books · live from devnet <button id="refresh" style="font: inherit; background: none; border: 1px solid var(--rule); color: var(--cyan); padding: 0 8px; cursor: pointer;">refresh</button></div>
-<div class="books" id="books"></div>
-<p class="note" id="chainStatus"></p>
+<div class="duo">
+  <div>
+    <div class="eyebrow">Books · deterministic engine</div>
+    <div id="books"></div>
+  </div>
+  <div>
+    <div class="eyebrow">Signal feed</div>
+    <div id="feed"></div>
+  </div>
+</div>
 
-<div class="eyebrow">Positions · every one a devnet transaction</div>
-<div class="tablewrap"><table id="positions"></table></div>
-<p class="note" id="calib"></p>
+<div id="settle"></div>
+<div id="chain"></div>
 
 <footer>
-  <p>Steamline reads TxLINE's World Cup odds feed, detects steam moves (sharp consensus shifts sustained
-  across ticks), and two rival autonomous agents trade every signal with play-money books on a Solana
-  devnet arena: follow rides the move, fade bets against it. Settlement uses the regulation score;
-  payouts are exact integer math, and the replay is deterministic.</p>
-  <p id="footlinks"></p>
+  <p>Steam moves are sharp, sustained consensus odds shifts that front-run the news. Steamline detects
+  them in TxLINE's demargined stable line and trades every signal twice: follow rides the move, fade bets
+  it is an overreaction. Positions and settlement run on an open Anchor program on Solana devnet where any
+  strategy can register a book and compete. Production thresholds are 3pp / 2% edge; the defaults here are
+  calibrated for these quiet pre-match windows. Replays are deterministic: same data, same settings, same
+  result, every time.</p>
+  <p>Program <a href="https://explorer.solana.com/address/E9jfScHBJRB2NyB2NFmE4Kec9D8hJ1X7k24AXufRbX5n?cluster=devnet" target="_blank" rel="noopener">E9jfScHB…</a>
+  · TxLINE World Cup hackathon, track 3 (autonomous agents)</p>
 </footer>
 
-<script>
-const EXPL = (sig, kind = "tx") => `https://explorer.solana.com/${kind}/${sig}?cluster=devnet`;
-const RPC = new URLSearchParams(location.search).get("rpc") || "https://api.devnet.solana.com";
-const OUTCOME_LABELS = { "1": "home", "X": "draw", "2": "away" };
-const pts = (n) => Number(n).toLocaleString("en-US");
-
-let state;
-
-async function main() {
-  state = await (await fetch("./state.json")).json();
-  renderMeta();
-  renderTape();
-  renderBooks(null);
-  renderPositions();
-  refreshChain();
-}
-
-function renderMeta() {
-  document.getElementById("meta").textContent =
-    `season ${state.season} · ${state.network} · ${new Date(state.generatedAt).toUTCString().slice(5, 22)} UTC`;
-  const m = document.getElementById("matchline");
-  const score = state.finalScore
-    ? `<span class="chip final">FT ${state.finalScore.home}-${state.finalScore.away} · ${state.finalScore.outcome} wins</span>`
-    : `<span class="chip">open</span>`;
-  m.innerHTML = `<span class="label">${state.matchLabel}</span> ${score}
-    <span class="chip">fixture ${state.fixtureId}</span>
-    <span class="chip"><a href="${EXPL(state.match, "address")}">match account</a></span>`;
-  document.getElementById("footlinks").innerHTML =
-    `Program <a href="${EXPL(state.programId, "address")}">${state.programId.slice(0, 8)}…</a> ·
-     Arena <a href="${EXPL(state.arena, "address")}">${state.arena.slice(0, 8)}…</a>` +
-    (state.settleMatchTx ? ` · Settlement <a href="${EXPL(state.settleMatchTx)}">tx</a>` : "");
-  document.getElementById("calib").textContent =
-    `Run config: detection threshold ${state.config.theta * 100}pp over ${state.config.windowTicks} ticks, ` +
-    `edge floor ${state.config.edgeMin * 100}%. Production defaults are 3pp / 2%; this window is calibrated ` +
-    `for TxLINE's demargined stable line.`;
-}
-
-function renderTape() {
-  const svg = document.getElementById("tape");
-  const W = 940, H = 150, PAD = 6;
-  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-  const tape = state.tape;
-  if (!tape || tape.length < 2) return;
-  const t0 = tape[0].ts, t1 = tape[tape.length - 1].ts;
-  const x = (ts) => PAD + ((ts - t0) / (t1 - t0)) * (W - 2 * PAD);
-  let lo = 1, hi = 0;
-  for (const p of tape) for (const v of p.probs) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
-  lo -= 0.01; hi += 0.01;
-  const y = (v) => H - PAD - ((v - lo) / (hi - lo)) * (H - 2 * PAD);
-  const colors = ["var(--odds)", "var(--draw)", "var(--cyan)"];
-  const names = state.outcomes.map((o) => OUTCOME_LABELS[o] || o);
-  // grid rules every 10%
-  let g = "";
-  for (let v = Math.ceil(lo * 10) / 10; v <= hi; v += 0.1) {
-    g += `<line x1="0" x2="${W}" y1="${y(v)}" y2="${y(v)}" stroke="var(--rule)" stroke-width="0.5"/>` +
-         `<text x="2" y="${y(v) - 3}" fill="var(--dim)" font-size="9">${Math.round(v * 100)}%</text>`;
-  }
-  let paths = "";
-  for (let k = 0; k < state.outcomes.length; k++) {
-    const steamed = state.signals.length && state.signals[0].outcome === state.outcomes[k];
-    const d = tape.map((p, i) => `${i ? "L" : "M"}${x(p.ts).toFixed(1)},${y(p.probs[k]).toFixed(1)}`).join("");
-    paths += `<path class="line" d="${d}" fill="none" stroke="${colors[k]}" stroke-width="${steamed ? 2.4 : 1.1}" opacity="${steamed ? 1 : 0.65}"/>`;
-  }
-  let marks = "";
-  for (const s of state.signals) {
-    const k = state.outcomes.indexOf(s.outcome);
-    marks += `<g><line x1="${x(s.ts)}" x2="${x(s.ts)}" y1="${PAD}" y2="${H - PAD}" stroke="var(--fade)" stroke-width="1" stroke-dasharray="3 3"/>` +
-      `<circle cx="${x(s.ts)}" cy="${y(s.postProb)}" r="4" fill="var(--fade)"/>` +
-      `<text x="${x(s.ts) + (x(s.ts) > W * 0.8 ? -5 : 5)}" text-anchor="${x(s.ts) > W * 0.8 ? "end" : "start"}" y="${PAD + 12}" fill="var(--fade)" font-size="10">STEAM #${s.seq + 1}</text></g>`;
-  }
-  svg.innerHTML = g + paths + marks;
-  document.getElementById("legend").innerHTML =
-    state.outcomes.map((o, k) => {
-      const c = ["#ffd84d", "#8b93b8", "#7fd4dc"][k];
-      return `<span><span class="k" style="background:${c}"></span>${names[k]} (${o})</span>`;
-    }).join("") +
-    `<span><span class="k" style="background:#ff7a5c"></span>steam signal</span>`;
-}
-
-function renderBooks(chain) {
-  const wrap = document.getElementById("books");
-  wrap.innerHTML = state.standings.map((s, i) => {
-    const b = state.books[i] || {};
-    const live = chain && chain[i];
-    const pnlCls = (v) => (v > 0 ? "pos" : v < 0 ? "neg" : "");
-    const engPnl = s.realizedPnl;
-    return `<div class="book ${s.strategy}">
-      <h2>${s.strategy}</h2>
-      <div class="strat">${s.strategy === "follow" ? "rides the steam" : "bets against the steam"}</div>
-      <div class="stat"><span>bankroll (on-chain)</span><span class="v">${live ? pts(live.bankroll) : "…"}</span></div>
-      <div class="stat"><span>realized pnl (on-chain)</span><span class="v ${live ? pnlCls(live.pnl) : ""}">${live ? pts(live.pnl) : "…"}</span></div>
-      <div class="stat"><span>record (on-chain)</span><span class="v">${live ? live.won + "W / " + live.lost + "L" : "…"}</span></div>
-      <div class="stat"><span>this run pnl (engine)</span><span class="v ${pnlCls(engPnl)}">${pts(engPnl)}</span></div>
-      <div class="stat"><span>avg brier</span><span class="v">${s.avgBrier === null ? "n/a" : s.avgBrier.toFixed(4)}</span></div>
-      ${b.address ? `<div class="addr"><a href="${EXPL(b.address, "address")}">${b.address}</a></div>` : ""}
-    </div>`;
-  }).join("");
-}
-
-async function refreshChain() {
-  const el = document.getElementById("chainStatus");
-  if (!state.books.length) { el.textContent = "Dry run snapshot: no on-chain accounts for this run."; return; }
-  el.textContent = "Reading book accounts from devnet…";
-  try {
-    const results = [];
-    for (const b of state.books) {
-      const res = await fetch(RPC, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getAccountInfo", params: [b.address, { encoding: "base64" }] }),
-      });
-      const j = await res.json();
-      const b64 = j.result && j.result.value && j.result.value.data[0];
-      if (!b64) { results.push(null); continue; }
-      const raw = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-      const dv = new DataView(raw.buffer);
-      results.push({
-        bankroll: Number(dv.getBigUint64(88, true)),
-        pnl: Number(dv.getBigInt64(104, true)),
-        won: dv.getUint32(116, true),
-        lost: dv.getUint32(120, true),
-      });
-    }
-    renderBooks(results);
-    el.textContent = `On-chain state read ${new Date().toUTCString().slice(17, 25)} UTC via ${new URL(RPC).host}. Books persist across matches; "this run pnl" is the replay's delta.`;
-  } catch (e) {
-    el.textContent = "Devnet RPC unreachable from this browser (rate limit or offline). Showing the recorded run snapshot.";
-  }
-}
-
-function renderPositions() {
-  const t = document.getElementById("positions");
-  const rows = state.positions.map((p) => `<tr>
-    <td class="agent-${p.agent}">${p.agent}</td>
-    <td>${OUTCOME_LABELS[p.outcome] || p.outcome}</td>
-    <td class="odds">${p.entryOdds.toFixed(2)}</td>
-    <td>${pts(p.stake)}</td>
-    <td><span class="${p.status}">${p.status.toUpperCase()}</span></td>
-    <td>${pts(p.payout)}</td>
-    <td>${p.openTx ? `<a href="${EXPL(p.openTx)}">open</a>` : "-"}${p.settleTx ? ` · <a href="${EXPL(p.settleTx)}">settle</a>` : ""}</td>
-  </tr>`).join("");
-  t.innerHTML = `<thead><tr><th>agent</th><th>backed</th><th>odds</th><th>stake</th><th>result</th><th>payout</th><th>solana tx</th></tr></thead><tbody>${rows}</tbody>`;
-}
-
-document.getElementById("refresh").addEventListener("click", refreshChain);
-main().catch((e) => { document.getElementById("meta").textContent = "state.json missing: run the agent once to generate it"; });
-</script>
+<script src="./app.js"></script>
 </body>
 </html>
