@@ -18,7 +18,11 @@ idl-build = ["anchor-lang/idl-build"]
 
 [dependencies]
 anchor-lang = "1.0.0"
+# On-chain sha256 via the sol_sha256 syscall; matches feed/validate.ts. sha2 feature
+# is enabled only in dev-deps so host tests can hash off-chain without bloating the .so.
+solana-sha256-hasher = "3"
 
 [dev-dependencies]
 litesvm = "0.13"
 solana-sdk = "3"
+solana-sha256-hasher = { version = "3", features = ["sha2"] }
