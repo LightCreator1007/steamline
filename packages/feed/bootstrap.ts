@@ -821,15 +821,26 @@ async function activate(env: FeedEnv, leagues: string): Promise<void> {
   const kp = loadOrCreateKeypair(env.keypairPath);
   const message = buildActivationMessage(creds.txSig, leagues, creds.jwt);
   const walletSignature = signActivation(message, kp.secretKey);
+  // Documented body shape: leagues is an array of integers ([] for the
+  // standard bundle); the signed preimage keeps the CSV-between-colons form.
+  const leagueIds = leagues === "" ? [] : leagues.split(",").map((s) => Number(s.trim()));
   const res = await fetch(`${env.apiBase}/api/token/activate`, {
     method: "POST",
     headers: { "content-type": "application/json", Authorization: `Bearer ${creds.jwt}` },
-    body: JSON.stringify({ txSig: creds.txSig, walletSignature, leagues }),
+    body: JSON.stringify({ txSig: creds.txSig, walletSignature, leagues: leagueIds }),
   });
   if (!res.ok) throw new FeedError("HTTP", `activate failed with ${res.status}: ${await res.text()}`, res.status);
-  const body = (await res.json()) as Record<string, unknown>;
-  const apiToken = (body.apiToken ?? body.token) as string | undefined;
-  if (!apiToken) throw new FeedError("BAD_JSON", `activate response had no apiToken; keys: ${Object.keys(body).join(",")}`);
+  // Success is documented as text/plain in the reference but JSON {token} in
+  // the quickstart; accept both.
+  const raw = await res.text();
+  let apiToken: string | undefined;
+  try {
+    const body = JSON.parse(raw) as Record<string, unknown>;
+    apiToken = (body.apiToken ?? body.token) as string | undefined;
+  } catch {
+    apiToken = raw.trim() || undefined;
+  }
+  if (!apiToken) throw new FeedError("BAD_JSON", "activate response had no apiToken");
   saveCreds(path, { ...creds, apiToken, leagues });
   console.log(`api token saved to ${path}`);
 }
