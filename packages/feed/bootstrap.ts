@@ -85,14 +85,21 @@ function flattenAccountNames(accounts: IdlAccountItemLike[]): string[] {
   return names;
 }
 
+// IDL naming drifted between TxLINE deploys (camelCase vs snake_case); compare
+// names case- and underscore-insensitively.
+function canonName(s: string): string {
+  return s.replace(/_/g, "").toLowerCase();
+}
+
 function findIxDef(idl: anchor.Idl, name: string): { name: string; accounts: IdlAccountItemLike[] } {
-  const ix = idl.instructions.find((i) => i.name === name);
+  const ix = idl.instructions.find((i) => canonName(i.name) === canonName(name));
   if (!ix) throw new FeedError("NETWORK", `instruction '${name}' not in fetched IDL; re-run probe`);
   return ix as unknown as { name: string; accounts: IdlAccountItemLike[] };
 }
 
 function missingAccountNames(names: string[], pubkeys: Record<string, unknown>): string[] {
-  return names.filter((n) => pubkeys[n] === undefined);
+  const have = new Set(Object.keys(pubkeys).map(canonName));
+  return names.filter((n) => !have.has(canonName(n)));
 }
 
 async function assertNoMissingAccounts(
