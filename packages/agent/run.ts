@@ -5,6 +5,7 @@
 // Usage: node --experimental-strip-types packages/agent/run.ts fixtures/demo-901 [fixtureId]
 // Env: DRY_RUN=1 skips all chain calls; DEMO_TICK_MS paces the replay (default 1200).
 import { createHash } from "node:crypto";
+import { writeFileSync } from "node:fs";
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 import { defaultConfig, newAgentState, type AgentState, type PositionRecord, type Signal } from "../engine/model.ts";
 import { normalizeOdds } from "../engine/normalize.ts";
@@ -64,6 +65,8 @@ interface OpenPos {
   record: PositionRecord;
   pick: Pick;
   address?: PublicKey;
+  openTx?: string;
+  settleTx?: string;
 }
 
 async function main(): Promise<void> {
@@ -97,6 +100,9 @@ async function main(): Promise<void> {
   let seq = 0;
   const nextSeq = () => seq++;
   let settled = false;
+  const tape: { ts: number; probs: number[]; seq?: number }[] = [];
+  let settleMatchTx: string | undefined;
+  let finalScore: { home: number; away: number; outcome: string } | undefined;
 
   for await (const ev of replaySource(`${ROOT}${fixtureDir}`).events()) {
     if (ev.kind === "odds") {
@@ -105,6 +111,7 @@ async function main(): Promise<void> {
       ev.payload.FixtureId = fixtureId;
       const tick = normalizeOdds(ev.payload, ev.payload.Ts, cfg);
       ledger.append(tick);
+      tape.push({ ts: tick.ts, probs: tick.outcomes.map((o) => Number(o.fairProb.toFixed(4))) });
       console.log(`tick ${tick.messageId}  ${fmtProbs(tick.outcomes)}`);
 
       const sig = detectSteam(ledger, fixtureId, tick.market, cfg, nextSeq, { recentSignals: signals });
@@ -174,6 +181,7 @@ async function main(): Promise<void> {
               ],
               agents[agentId],
             );
+            pos.openTx = txSig;
             console.log(`${name}: open_position tx ${explorer(txSig)}`);
           }
         }
@@ -185,6 +193,7 @@ async function main(): Promise<void> {
       const away = Number(ev.payload.AwayScore ?? 0);
       settled = true;
       const result = outcomeFromScore(home, away);
+      finalScore = { home, away, outcome: result };
       console.log(`\n=== regulation final: ${home}-${away} (${result}) ===`);
 
       if (!DRY) {
@@ -205,6 +214,7 @@ async function main(): Promise<void> {
           ],
           deployer!,
         );
+        settleMatchTx = txSig;
         console.log(`settle_match tx ${explorer(txSig)}`);
       }
 
@@ -234,6 +244,7 @@ async function main(): Promise<void> {
             [settlePositionIx({ game, position: pos.address, book: books[agentId] })],
             deployer!,
           );
+          pos.settleTx = txSig;
           console.log(`${name}: settle_position tx ${explorer(txSig)}`);
         }
       }
@@ -242,6 +253,40 @@ async function main(): Promise<void> {
 
   console.log("\n=== leaderboard (engine replay) ===");
   console.log(renderMarkdown(bookStates.map((b) => standing(b))));
+
+  // Snapshot for the hosted dashboard: everything a judge needs to inspect
+  // the run without the terminal.
+  const state = {
+    generatedAt: new Date().toISOString(),
+    network: DRY ? "dry-run" : "devnet",
+    matchLabel: process.env.MATCH_LABEL ?? `fixture ${fixtureId}`,
+    season: SEASON_ID.toString(),
+    fixtureId,
+    programId: "E9jfScHBJRB2NyB2NFmE4Kec9D8hJ1X7k24AXufRbX5n",
+    arena: arena.toBase58(),
+    match: game.toBase58(),
+    books: DRY ? [] : books.map((b, i) => ({ agent: i === 0 ? "follow" : "fade", address: b.toBase58() })),
+    outcomes: ["1", "X", "2"],
+    tape,
+    signals: signals.map((s) => ({ ts: s.ts, outcome: s.outcome, preProb: s.preProb, postProb: s.postProb, seq: s.seq })),
+    positions: openPositions.map((p) => ({
+      agent: p.record.agentId === 0 ? "follow" : "fade",
+      outcome: p.record.outcome,
+      entryOdds: p.record.entryOdds,
+      stake: p.record.stakePoints,
+      status: p.record.status,
+      payout: p.record.payoutPoints,
+      signalSeq: p.record.signalSeq,
+      openTx: p.openTx ?? null,
+      settleTx: p.settleTx ?? null,
+    })),
+    finalScore: finalScore ?? null,
+    settleMatchTx: settleMatchTx ?? null,
+    standings: bookStates.map((b) => standing(b)),
+    config: { theta: cfg.theta, edgeMin: cfg.edgeMin, windowTicks: cfg.windowTicks, startingBankroll: cfg.startingBankroll },
+  };
+  writeFileSync(`${ROOT}dashboard/state.json`, JSON.stringify(state, null, 1));
+  console.log("dashboard state written to dashboard/state.json");
 
   if (!DRY) {
     console.log("\n=== on-chain vs engine parity (this run's deltas) ===");
