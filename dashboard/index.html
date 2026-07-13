@@ -39,7 +39,11 @@
 
   .eyebrow { color: var(--cyan); font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase; margin: 24px 0 8px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 
-  #rail { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+  .stagehead { color: var(--dim); font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase; margin: 14px 0 6px; }
+  .stagegrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+  .runbtn { background: none; border: 1px solid var(--odds); color: var(--odds); padding: 6px 16px; margin-top: 6px; }
+  .runbtn:hover:not(:disabled) { background: var(--odds); color: var(--field); }
+  .runbtn:disabled { opacity: 0.6; cursor: wait; }
   .gcard { text-align: left; background: var(--panel); border: 1px solid var(--rule); color: var(--ink); padding: 10px 12px; display: flex; flex-direction: column; gap: 3px; }
   .gcard:hover, .gcard:focus-visible { border-color: var(--cyan); }
   .gcard.active { border-color: var(--odds); }

@@ -5,5 +5,8 @@
   "scripts": {
     "test:engine": "node --test --experimental-strip-types \"packages/engine/*.test.ts\"",
     "test:feed": "node --test --experimental-strip-types \"packages/feed/*.test.ts\""
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.95.0"
   }
 }

@@ -1,7 +1,252 @@
 [
-  { "id": 18209181, "home": "France", "away": "Morocco", "stage": "Quarter-final", "date": "Jul 9", "final": "2-0" },
-  { "id": 18218149, "home": "Spain", "away": "Belgium", "stage": "Quarter-final", "date": "Jul 10", "final": "2-1" },
-  { "id": 18213979, "home": "Norway", "away": "England", "stage": "Quarter-final", "date": "Jul 11", "final": "1-2", "onchain": true },
-  { "id": 18222446, "home": "Argentina", "away": "Switzerland", "stage": "Quarter-final", "date": "Jul 12", "final": "3-1" },
-  { "id": 18237038, "home": "France", "away": "Spain", "stage": "Semi-final", "date": "Jul 14 · 19:00 UTC", "live": true }
+  {
+    "id": 17588389,
+    "home": "Argentina",
+    "away": "Austria",
+    "stage": "Group stage",
+    "date": "Jun 22",
+    "kickoff": "2026-06-22T17:00:00Z",
+    "final": "2-0",
+    "cal": {
+      "theta": 0.004,
+      "edgeMin": 0.002
+    }
+  },
+  {
+    "id": 17588324,
+    "home": "England",
+    "away": "Ghana",
+    "stage": "Group stage",
+    "date": "Jun 23",
+    "kickoff": "2026-06-23T20:00:00Z",
+    "final": "0-0",
+    "cal": {
+      "theta": 0.003,
+      "edgeMin": 0.002
+    }
+  },
+  {
+    "id": 17588398,
+    "home": "Scotland",
+    "away": "Brazil",
+    "stage": "Group stage",
+    "date": "Jun 24",
+    "kickoff": "2026-06-24T22:01:00Z",
+    "final": "0-3",
+    "cal": {
+      "theta": 0.006,
+      "edgeMin": 0.003
+    }
+  },
+  {
+    "id": 17588234,
+    "home": "Norway",
+    "away": "France",
+    "stage": "Group stage",
+    "date": "Jun 26",
+    "kickoff": "2026-06-26T19:00:00Z",
+    "final": "1-4",
+    "cal": {
+      "theta": 0.01,
+      "edgeMin": 0.005
+    }
+  },
+  {
+    "id": 17588404,
+    "home": "Uruguay",
+    "away": "Spain",
+    "stage": "Group stage",
+    "date": "Jun 27",
+    "kickoff": "2026-06-27T00:00:00Z",
+    "final": "0-1",
+    "cal": {
+      "theta": 0.01,
+      "edgeMin": 0.005
+    }
+  },
+  {
+    "id": 17588402,
+    "home": "Panama",
+    "away": "England",
+    "stage": "Group stage",
+    "date": "Jun 27",
+    "kickoff": "2026-06-27T21:00:00Z",
+    "final": "0-2",
+    "cal": {
+      "theta": 0.005,
+      "edgeMin": 0.003
+    }
+  },
+  {
+    "id": 18172469,
+    "home": "Brazil",
+    "away": "Japan",
+    "stage": "Round of 32",
+    "date": "Jun 29",
+    "kickoff": "2026-06-29T17:00:00Z",
+    "final": "2-1",
+    "cal": {
+      "theta": 0.006,
+      "edgeMin": 0.005
+    }
+  },
+  {
+    "id": 18175983,
+    "home": "Germany",
+    "away": "Paraguay",
+    "stage": "Round of 32",
+    "date": "Jun 29",
+    "kickoff": "2026-06-29T20:30:00Z",
+    "final": "1-1",
+    "cal": {
+      "theta": 0.008,
+      "edgeMin": 0.005
+    }
+  },
+  {
+    "id": 18172280,
+    "home": "Netherlands",
+    "away": "Morocco",
+    "stage": "Round of 32",
+    "date": "Jun 30",
+    "kickoff": "2026-06-30T01:00:00Z",
+    "final": "1-1",
+    "cal": {
+      "theta": 0.006,
+      "edgeMin": 0.005
+    }
+  },
+  {
+    "id": 18179763,
+    "home": "Portugal",
+    "away": "Croatia",
+    "stage": "Round of 32",
+    "date": "Jul 2",
+    "kickoff": "2026-07-02T23:00:00Z",
+    "final": "2-1",
+    "cal": {
+      "theta": 0.005,
+      "edgeMin": 0.003
+    }
+  },
+  {
+    "id": 18188721,
+    "home": "Paraguay",
+    "away": "France",
+    "stage": "Round of 16",
+    "date": "Jul 4",
+    "kickoff": "2026-07-04T21:03:00Z",
+    "final": "0-1",
+    "cal": {
+      "theta": 0.0025,
+      "edgeMin": 0.001
+    }
+  },
+  {
+    "id": 18192996,
+    "home": "Mexico",
+    "away": "England",
+    "stage": "Round of 16",
+    "date": "Jul 6",
+    "kickoff": "2026-07-06T01:00:00Z",
+    "final": "2-3",
+    "cal": {
+      "theta": 0.006,
+      "edgeMin": 0.005
+    }
+  },
+  {
+    "id": 18198205,
+    "home": "Portugal",
+    "away": "Spain",
+    "stage": "Round of 16",
+    "date": "Jul 6",
+    "kickoff": "2026-07-06T19:00:00Z",
+    "final": "0-1",
+    "cal": {
+      "theta": 0.005,
+      "edgeMin": 0.005
+    }
+  },
+  {
+    "id": 18202701,
+    "home": "Argentina",
+    "away": "Egypt",
+    "stage": "Round of 16",
+    "date": "Jul 7",
+    "kickoff": "2026-07-07T16:00:00Z",
+    "final": "3-2",
+    "cal": {
+      "theta": 0.005,
+      "edgeMin": 0.003
+    }
+  },
+  {
+    "id": 18209181,
+    "home": "France",
+    "away": "Morocco",
+    "stage": "Quarter-final",
+    "date": "Jul 9",
+    "final": "2-0",
+    "kickoff": "2026-07-09T20:00:00Z",
+    "cal": {
+      "theta": 0.003,
+      "edgeMin": 0.005
+    }
+  },
+  {
+    "id": 18218149,
+    "home": "Spain",
+    "away": "Belgium",
+    "stage": "Quarter-final",
+    "date": "Jul 10",
+    "final": "2-1",
+    "kickoff": "2026-07-10T19:00:00Z",
+    "cal": {
+      "theta": 0.006,
+      "edgeMin": 0.005
+    }
+  },
+  {
+    "id": 18213979,
+    "home": "Norway",
+    "away": "England",
+    "stage": "Quarter-final",
+    "date": "Jul 11",
+    "final": "1-2",
+    "kickoff": "2026-07-11T21:00:00Z",
+    "cal": {
+      "theta": 0.01,
+      "edgeMin": 0.005
+    }
+  },
+  {
+    "id": 18222446,
+    "home": "Argentina",
+    "away": "Switzerland",
+    "stage": "Quarter-final",
+    "date": "Jul 12",
+    "final": "3-1",
+    "kickoff": "2026-07-12T01:00:00Z",
+    "cal": {
+      "theta": 0.005,
+      "edgeMin": 0.005
+    }
+  },
+  {
+    "id": 18237038,
+    "home": "France",
+    "away": "Spain",
+    "stage": "Semi-final",
+    "date": "Jul 14 · 19:00 UTC",
+    "live": true
+  },
+  {
+    "id": 18241006,
+    "home": "England",
+    "away": "Argentina",
+    "stage": "Semi-final",
+    "date": "Jul 15 · 19:00 UTC",
+    "live": true
+  }
 ]

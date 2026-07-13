@@ -1,0 +1,15 @@
+keypairs
+.env*
+docs
+HANDOFF.md
+CLAUDE.md
+.superpowers
+.claude
+node_modules
+packages/onchain/target
+packages/onchain/.anchor
+fixtures
+test-ledger
+*.log
+dashboard/node_modules
+dashboard/.vercel

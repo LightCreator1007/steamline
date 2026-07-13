@@ -1,0 +1,7 @@
+{
+  "buildCommand": "echo prebuilt",
+  "outputDirectory": "dashboard",
+  "functions": {
+    "api/run.js": { "maxDuration": 120 }
+  }
+}

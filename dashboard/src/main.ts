@@ -17,8 +17,8 @@ interface Game {
   stage: string;
   date: string;
   final?: string;
-  onchain?: boolean;
   live?: boolean;
+  cal?: { theta: number; edgeMin: number };
 }
 
 interface SimPosition {
@@ -35,11 +35,9 @@ interface SimPosition {
 
 const $ = (id: string) => document.getElementById(id)!;
 const EXPL = (sig: string, kind = "tx") => `https://explorer.solana.com/${kind}/${sig}?cluster=devnet`;
-const RPC = new URLSearchParams(location.search).get("rpc") || "https://api.devnet.solana.com";
 const pts = (n: number) => n.toLocaleString("en-US");
 
 let games: Game[] = [];
-let chainState: any = null; // dashboard/state.json from the recorded on-chain run
 let game: Game | null = null;
 let payloads: OddsPayload[] = [];
 let finalScore: { HomeScore: number; AwayScore: number } | null = null;
@@ -68,32 +66,34 @@ function outcomeName(o: string): string {
 
 async function boot(): Promise<void> {
   games = await (await fetch("./data/games.json")).json();
-  try {
-    chainState = await (await fetch("./state.json")).json();
-  } catch {
-    chainState = null;
-  }
   renderRail();
-  const first = games.find((g) => g.onchain) ?? games[0];
+  const first = games.find((g) => g.id === 18213979) ?? games[0];
   await selectGame(first.id);
 }
 
 function renderRail(): void {
-  $("rail").innerHTML = games
-    .map((g) => {
-      const active = game && g.id === game.id ? " active" : "";
-      if (g.live) {
-        return `<button class="gcard live" data-id="${g.id}" aria-disabled="true">
-          <span class="teams">${g.home} vs ${g.away}</span>
-          <span class="sub">${g.stage} · ${g.date}</span>
-          <span class="livechip">LIVE · coming soon</span></button>`;
-      }
-      return `<button class="gcard${active}" data-id="${g.id}">
+  let html = "";
+  let stage = "";
+  for (const g of games) {
+    if (g.stage !== stage) {
+      stage = g.stage;
+      html += `<div class="stagehead">${stage}</div><div class="stagegrid">`;
+    }
+    const active = game && g.id === game.id ? " active" : "";
+    if (g.live) {
+      html += `<button class="gcard live" data-id="${g.id}" aria-disabled="true">
         <span class="teams">${g.home} vs ${g.away}</span>
-        <span class="sub">${g.stage} · ${g.date} · FT ${g.final}</span>
-        ${g.onchain ? '<span class="chainchip">on-chain run</span>' : '<span class="simchip">replay analysis</span>'}</button>`;
-    })
-    .join("");
+        <span class="sub">${g.date}</span>
+        <span class="livechip">LIVE · coming soon</span></button>`;
+    } else {
+      html += `<button class="gcard${active}" data-id="${g.id}">
+        <span class="teams">${g.home} vs ${g.away}</span>
+        <span class="sub">${g.date}${g.final ? ` · FT ${g.final}` : ""}</span></button>`;
+    }
+    const next = games[games.indexOf(g) + 1];
+    if (!next || next.stage !== stage) html += `</div>`;
+  }
+  $("rail").innerHTML = html;
   for (const el of document.querySelectorAll<HTMLButtonElement>(".gcard")) {
     el.addEventListener("click", () => {
       const g = games.find((x) => x.id === Number(el.dataset.id))!;
@@ -116,6 +116,14 @@ async function selectGame(id: number): Promise<void> {
   payloads = oddsTxt.split("\n").filter(Boolean).map((l) => JSON.parse(l));
   finalScore = JSON.parse(scoreTxt.split("\n").filter(Boolean)[0] ?? "null");
   $("liveNote").textContent = "";
+  // Default the knobs to this game's pinned calibration (the canonical
+  // on-chain run uses exactly these settings).
+  if (game.cal) {
+    ($("theta") as HTMLInputElement).value = String(game.cal.theta * 100);
+    ($("edge") as HTMLInputElement).value = String(game.cal.edgeMin * 100);
+    $("thetaVal").textContent = `${game.cal.theta * 100}pp`;
+    $("edgeVal").textContent = `${game.cal.edgeMin * 100}%`;
+  }
   renderRail();
   resetReplay();
   play();
@@ -139,7 +147,7 @@ function resetReplay(): void {
   renderBoard(null);
   renderBooks();
   renderTape();
-  renderChainPanel();
+  fetchRunState().then(renderChainPanel);
   updatePlayButton();
 }
 
@@ -151,6 +159,10 @@ function step(): void {
   }
   const c = cfg();
   const p = payloads[idx++];
+  // Skip heartbeat/removal updates with empty or misaligned price arrays.
+  if (!Array.isArray(p.PriceNames) || !Array.isArray(p.Prices) || p.PriceNames.length !== p.Prices.length || p.PriceNames.length === 0 || p.Prices.some((x: number) => !(x > 1000))) {
+    return;
+  }
   const tick = normalizeOdds(p, p.Ts, c);
   ledger.append(tick);
   tape.push({ ts: tick.ts, probs: tick.outcomes.map((o) => o.fairProb) });
@@ -201,7 +213,7 @@ function step(): void {
       });
       feed(
         `<div class="ev ${name}"><b>${name}</b> backs <b>${outcomeName(pick.outcome)}</b> at ${pick.entryOdds.toFixed(2)}
-         · stake ${pts(stake)} pts · edge ${(pick.edge * 100).toFixed(1)}%${txLink(agent as 0 | 1, sig.seq)}</div>`,
+         · stake ${pts(stake)} pts · edge ${(pick.edge * 100).toFixed(1)}%</div>`,
       );
       renderBooks();
     });
@@ -230,7 +242,7 @@ function settleNow(): void {
     rows += `<tr><td class="agent-${pos.agent === 0 ? "follow" : "fade"}">${pos.agent === 0 ? "follow" : "fade"}</td>
       <td>${outcomeName(pos.outcome)}</td><td class="odds">${pos.entryOdds.toFixed(2)}</td>
       <td>${pts(pos.stake)}</td><td><span class="${pos.status}">${pos.status.toUpperCase()}</span></td>
-      <td>${pts(pos.payout)}</td><td>${txCell(pos)}</td></tr>`;
+      <td>${pts(pos.payout)}</td></tr>`;
   }
   renderBooks();
   const noTrades = positions.length === 0;
@@ -238,26 +250,43 @@ function settleNow(): void {
     <div class="eyebrow">Settlement · regulation score</div>
     <div class="finalbox">FT ${finalScore.HomeScore}-${finalScore.AwayScore} · ${outcomeName(winName)} wins</div>
     ${noTrades
-      ? `<p class="note">No steam cleared the threshold in this window, so neither agent traded. Discipline is a feature: quiet markets stay quiet. Lower the threshold and replay to see what a twitchier detector would have done.</p>`
-      : `<div class="tablewrap"><table><thead><tr><th>agent</th><th>backed</th><th>odds</th><th>stake</th><th>result</th><th>payout</th><th>tx</th></tr></thead><tbody>${rows}</tbody></table></div>`}
+      ? `<p class="note">No steam cleared the threshold at these settings, so neither agent traded. Discipline is a feature: quiet markets stay quiet. Lower the threshold and replay to see what a twitchier detector would have done.</p>`
+      : `<div class="tablewrap"><table><thead><tr><th>agent</th><th>backed</th><th>odds</th><th>stake</th><th>result</th><th>payout</th></tr></thead><tbody>${rows}</tbody></table></div>`}
   `;
 }
 
-function txLink(agent: 0 | 1, signalSeq: number): string {
-  const m = matchChainPos(agent, signalSeq);
-  return m && m.openTx ? ` · <a href="${EXPL(m.openTx)}" target="_blank" rel="noopener">devnet tx</a>` : "";
+let runState: any = null;
+let apiAvailable = true;
+
+async function fetchRunState(): Promise<void> {
+  runState = null;
+  if (!apiAvailable || !game) return;
+  try {
+    const res = await fetch(`/api/run?fixture=${game.id}`);
+    if (res.status === 404 && !res.headers.get("content-type")?.includes("json")) {
+      apiAvailable = false; // local static server without functions
+      return;
+    }
+    runState = await res.json();
+  } catch {
+    apiAvailable = false;
+  }
 }
 
-function txCell(pos: SimPosition): string {
-  const m = matchChainPos(pos.agent, pos.signalSeq);
-  if (!m) return "-";
-  return `${m.openTx ? `<a href="${EXPL(m.openTx)}" target="_blank" rel="noopener">open</a>` : "-"}${m.settleTx ? ` · <a href="${EXPL(m.settleTx)}" target="_blank" rel="noopener">settle</a>` : ""}`;
-}
-
-function matchChainPos(agent: 0 | 1, signalSeq: number): any {
-  if (!game || !chainState || chainState.fixtureId !== game.id) return null;
-  const name = agent === 0 ? "follow" : "fade";
-  return chainState.positions.find((p: any) => p.agent === name && p.signalSeq === signalSeq) ?? null;
+async function executeOnChain(): Promise<void> {
+  if (!game) return;
+  const btn = document.getElementById("runbtn") as HTMLButtonElement | null;
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "submitting devnet transactions... (up to a minute)";
+  }
+  try {
+    const res = await fetch(`/api/run?fixture=${game.id}`, { method: "POST" });
+    runState = await res.json();
+  } catch {
+    if (btn) btn.textContent = "execution failed, try again";
+  }
+  renderChainPanel();
 }
 
 function renderBoard(tick: any): void {
@@ -330,39 +359,42 @@ function renderTape(): void {
 
 async function renderChainPanel(): Promise<void> {
   const el = $("chain");
-  if (!game?.onchain || !chainState || chainState.fixtureId !== game.id) {
-    el.innerHTML = game && !game.onchain
-      ? `<p class="note">Replay analysis only for this game. Norway vs England carries a full on-chain arena run with real devnet transactions.</p>`
-      : "";
+  if (!game || !apiAvailable || !runState || runState.error) {
+    el.innerHTML = apiAvailable ? "" : `<p class="note">On-chain execution API not available on this host.</p>`;
     return;
   }
-  el.innerHTML = `<div class="eyebrow">On-chain arena run · devnet</div>
-    <p class="note">This game was traded for real by the agent on the Solana devnet arena
-    (season ${chainState.season}). Book accounts, live from chain: <span id="chainbal">reading...</span><br>
-    Program <a href="${EXPL(chainState.programId, "address")}" target="_blank" rel="noopener">${chainState.programId.slice(0, 8)}…</a>
-    · Arena <a href="${EXPL(chainState.arena, "address")}" target="_blank" rel="noopener">${chainState.arena.slice(0, 8)}…</a>
-    · Match <a href="${EXPL(chainState.match, "address")}" target="_blank" rel="noopener">${chainState.match.slice(0, 8)}…</a>
-    ${chainState.settleMatchTx ? `· Settlement <a href="${EXPL(chainState.settleMatchTx)}" target="_blank" rel="noopener">tx</a>` : ""}</p>`;
-  try {
-    const out: string[] = [];
-    for (const b of chainState.books) {
-      const res = await fetch(RPC, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getAccountInfo", params: [b.address, { encoding: "base64" }] }),
-      });
-      const j = await res.json();
-      const b64 = j.result?.value?.data?.[0];
-      if (!b64) continue;
-      const raw = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-      const dv = new DataView(raw.buffer);
-      out.push(`${b.agent} ${pts(Number(dv.getBigUint64(88, true)))} pts (${dv.getUint32(116, true)}W/${dv.getUint32(120, true)}L)`);
-    }
-    $("chainbal").textContent = out.join(" · ") || "unavailable";
-  } catch {
-    const cb = document.getElementById("chainbal");
-    if (cb) cb.textContent = "devnet RPC unreachable from this browser";
+  const head = `<div class="eyebrow">Public devnet arena · season ${runState.season}</div>`;
+  const links = `Arena <a href="${EXPL(runState.arena, "address")}" target="_blank" rel="noopener">${runState.arena.slice(0, 8)}…</a>
+    · Match <a href="${EXPL(runState.match, "address")}" target="_blank" rel="noopener">${runState.match.slice(0, 8)}…</a>
+    · Books <a href="${EXPL(runState.books[0].address, "address")}" target="_blank" rel="noopener">follow</a> /
+    <a href="${EXPL(runState.books[1].address, "address")}" target="_blank" rel="noopener">fade</a>`;
+  if (runState.noSteam) {
+    el.innerHTML = `${head}<p class="note">At the pinned calibration this game produces no signals, so there is
+      nothing to trade on-chain. ${links}</p>`;
+    return;
   }
+  if (!runState.ran) {
+    el.innerHTML = `${head}<p class="note">This game has not been executed on the public arena yet. Anyone can
+      trigger its one canonical run (pinned calibration: ${runState.calibration.theta * 100}pp threshold,
+      ${runState.calibration.edgeMin * 100}% edge floor). The button submits real devnet transactions signed by
+      the arena's server-held keys. ${links}</p>
+      <button id="runbtn" class="runbtn">Run this game on the devnet arena</button>`;
+    document.getElementById("runbtn")?.addEventListener("click", executeOnChain);
+    return;
+  }
+  const rows = runState.positions
+    .map(
+      (p: any) => `<tr><td class="agent-${p.agent}">${p.agent}</td>
+      <td>${outcomeName(p.outcome)}</td><td class="odds">${p.entryOdds.toFixed(2)}</td>
+      <td>${pts(p.stake)}</td><td><span class="${p.status}">${p.status.toUpperCase()}</span></td>
+      <td>${pts(p.payout)}</td>
+      <td>${p.openTx ? `<a href="${EXPL(p.openTx)}" target="_blank" rel="noopener">open</a>` : "-"}${p.settleTx ? ` · <a href="${EXPL(p.settleTx)}" target="_blank" rel="noopener">settle</a>` : ""}</td></tr>`,
+    )
+    .join("");
+  el.innerHTML = `${head}<p class="note">Executed on the public arena at the pinned calibration
+    (${runState.calibration.theta * 100}pp / ${runState.calibration.edgeMin * 100}%). Every row is a real devnet
+    transaction. ${links}</p>
+    <div class="tablewrap"><table><thead><tr><th>agent</th><th>backed</th><th>odds</th><th>stake</th><th>result</th><th>payout</th><th>solana tx</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 function feed(html: string): void {
