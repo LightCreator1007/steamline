@@ -32,4 +32,6 @@ pub enum ArenaError {
     LeafTooLarge,
     #[msg("Proof node side flag must be 0 (left) or 1 (right)")]
     BadProofSide,
+    #[msg("Match belongs to a different arena than the book")]
+    ArenaMismatch,
 }

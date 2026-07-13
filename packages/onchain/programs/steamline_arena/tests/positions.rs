@@ -62,6 +62,19 @@ fn open_position_requires_book_authority_to_sign() {
 }
 
 #[test]
+fn open_position_rejects_match_from_another_arena() {
+    let (mut svm, payer, _arena_a, agent, book, _game_a) = base();
+    let arena_b = init_arena(&mut svm, &payer, 2027);
+    let game_b = open_match(&mut svm, &payer, &arena_b, 99);
+    // book is registered in arena A; game_b lives in arena B. game.arena == book.arena must reject.
+    let r = open_position(&mut svm, &agent, &book, &game_b, 99, 0, 30_000, 1950, 0);
+    assert!(
+        r.is_err(),
+        "a book must not open a position against a match in a different arena"
+    );
+}
+
+#[test]
 fn double_open_same_signal_seq_fails() {
     let (mut svm, _payer, _arena, agent, book, game) = base();
     open_position(&mut svm, &agent, &book, &game, 42, 0, 30_000, 1950, 5).unwrap();

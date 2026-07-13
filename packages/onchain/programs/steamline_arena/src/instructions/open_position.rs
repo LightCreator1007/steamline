@@ -18,6 +18,7 @@ pub struct OpenPosition<'info> {
     pub book: Account<'info, AgentBook>,
     #[account(
         constraint = game.status == STATUS_OPEN @ ArenaError::MatchNotOpen,
+        constraint = game.arena == book.arena @ ArenaError::ArenaMismatch,
     )]
     pub game: Account<'info, Match>,
     #[account(
