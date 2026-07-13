@@ -26,7 +26,7 @@ import {
 
 const RPC = process.env.RPC_URL ?? "https://api.devnet.solana.com";
 const ROOT = new URL("../..", import.meta.url).pathname;
-const SEASON_ID = 2026n;
+const SEASON_ID = BigInt(process.env.SEASON ?? "2026");
 const STARTING_BANKROLL = 1_000_000_000n;
 const TXORACLE_DEVNET = new PublicKey("6pW64gN1s2uqjHkn1unFeEjAwJkPGHoppGvS715wyP2J");
 const FIXTURE_ID = BigInt(process.argv[2] ?? "901");

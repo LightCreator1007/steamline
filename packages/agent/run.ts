@@ -33,13 +33,20 @@ const ROOT = new URL("../..", import.meta.url).pathname;
 const RPC = process.env.RPC_URL ?? "https://api.devnet.solana.com";
 const DRY = process.env.DRY_RUN === "1";
 const TICK_MS = Number(process.env.DEMO_TICK_MS ?? 1200);
-const SEASON_ID = 2026n;
+const SEASON_ID = BigInt(process.env.SEASON ?? "2026");
 
 const fixtureDir = process.argv[2] ?? "fixtures/demo-901";
 const fixtureId = Number(process.argv[3] ?? fixtureDir.match(/(\d+)\/?$/)?.[1] ?? 901);
 
 const OUTCOME_CODE: Record<string, number> = { "1": 0, X: 1, "2": 2 };
-const cfg = defaultConfig;
+// THETA and EDGE_MIN env overrides calibrate for quiet demo windows and
+// TxLINE's demargined stable line (no vig cushion); production defaults stay
+// 0.03 / 0.02.
+const cfg = {
+  ...defaultConfig,
+  theta: Number(process.env.THETA ?? defaultConfig.theta),
+  edgeMin: Number(process.env.EDGE_MIN ?? defaultConfig.edgeMin),
+};
 
 function sha256(s: string): Uint8Array {
   return createHash("sha256").update(s).digest();
@@ -71,6 +78,17 @@ async function main(): Promise<void> {
   const game = matchPda(arena, BigInt(fixtureId));
   const books = DRY ? [] : agents.map((a) => bookPda(arena, a.publicKey));
 
+  // AgentBook layout: 8 disc + 32 arena + 32 authority + 16 tag, then
+  // bankroll u64, staked u64, pnl i64, opened u32, won u32, lost u32.
+  async function readBook(pk: PublicKey): Promise<{ bankroll: bigint; pnl: bigint; won: number; lost: number } | null> {
+    const info = await connection!.getAccountInfo(pk);
+    if (!info) return null;
+    const d = info.data;
+    return { bankroll: d.readBigUInt64LE(88), pnl: d.readBigInt64LE(104), won: d.readUInt32LE(116), lost: d.readUInt32LE(120) };
+  }
+  // Books persist across matches; parity compares this run's deltas.
+  const startBooks = DRY ? [] : await Promise.all(books.map((b) => readBook(b)));
+
   const ledger = inMemoryLedger();
   const bookStates: AgentState[] = [newAgentState(0, cfg.startingBankroll), newAgentState(1, cfg.startingBankroll)];
   const safety: SafetyState = { killed: false, dailyLoss: 0 };
@@ -82,6 +100,9 @@ async function main(): Promise<void> {
 
   for await (const ev of replaySource(`${ROOT}${fixtureDir}`).events()) {
     if (ev.kind === "odds") {
+      // Re-key to the CLI fixture id so retakes can use a fresh on-chain match
+      // (position PDAs are idempotent per fixture + signal_seq by design).
+      ev.payload.FixtureId = fixtureId;
       const tick = normalizeOdds(ev.payload, ev.payload.Ts, cfg);
       ledger.append(tick);
       console.log(`tick ${tick.messageId}  ${fmtProbs(tick.outcomes)}`);
@@ -223,27 +244,27 @@ async function main(): Promise<void> {
   console.log(renderMarkdown(bookStates.map((b) => standing(b))));
 
   if (!DRY) {
-    console.log("\n=== on-chain vs engine parity ===");
+    console.log("\n=== on-chain vs engine parity (this run's deltas) ===");
     for (let agentId = 0; agentId < 2; agentId++) {
-      const info = await connection!.getAccountInfo(books[agentId]);
-      if (!info) {
-        console.log(`book ${agentId}: MISSING on-chain`);
+      const name = agentId === 0 ? "follow" : "fade";
+      const end = await readBook(books[agentId]);
+      const start = startBooks[agentId];
+      if (!end || !start) {
+        console.log(`${name}: book MISSING on-chain`);
         continue;
       }
-      // AgentBook layout: 8 disc + 32 arena + 32 authority + 16 tag, then
-      // bankroll u64, staked u64, pnl i64, opened u32, won u32, lost u32.
-      const d = info.data;
-      const bankroll = d.readBigUInt64LE(88);
-      const pnl = d.readBigInt64LE(104);
-      const won = d.readUInt32LE(116);
-      const lost = d.readUInt32LE(120);
-      const name = agentId === 0 ? "follow" : "fade";
       const local = bookStates[agentId];
+      const dBankroll = end.bankroll - start.bankroll;
+      const dPnl = end.pnl - start.pnl;
+      const engBankroll = BigInt(local.bankrollPoints - cfg.startingBankroll);
+      const engPnl = BigInt(local.realizedPnl);
       const match =
-        bankroll === BigInt(local.bankrollPoints) && pnl === BigInt(local.realizedPnl) ? "MATCH" : "MISMATCH";
+        dBankroll === engBankroll && dPnl === engPnl && end.won - start.won === local.betsWon && end.lost - start.lost === local.betsLost
+          ? "MATCH"
+          : "MISMATCH";
       console.log(
-        `${name}: on-chain bankroll ${bankroll.toLocaleString()} pnl ${pnl.toLocaleString()} (${won}W/${lost}L) ` +
-          `vs engine ${local.bankrollPoints.toLocaleString()} / ${local.realizedPnl.toLocaleString()} -> ${match}`,
+        `${name}: on-chain delta bankroll ${dBankroll.toLocaleString()} pnl ${dPnl.toLocaleString()} ` +
+          `(+${end.won - start.won}W/+${end.lost - start.lost}L) vs engine ${engBankroll.toLocaleString()} / ${engPnl.toLocaleString()} -> ${match}`,
       );
     }
   }
