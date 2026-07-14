@@ -1,6 +1,7 @@
 // Minimal steamline_arena client. Instruction layouts hand-encoded from
 // packages/onchain/target/idl/steamline_arena.json (all args are fixed-size
 // primitives, so a full Anchor client is unnecessary).
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import {
   Connection,
@@ -25,6 +26,19 @@ const DISC = {
 
 export function loadKeypair(path: string): Keypair {
   return Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(path, "utf8"))));
+}
+
+// On-chain outcome encoding: 0 home, 1 draw, 2 away, 255 none (state.rs).
+export function outcomeCode(name: string): number {
+  return name === "1" ? 0 : name === "X" ? 1 : name === "2" ? 2 : 255;
+}
+
+export function oddsMsgRef(messageId: string): Uint8Array {
+  return createHash("sha256").update(messageId).digest();
+}
+
+export function scoreProofRef(fixtureId: number, home: number, away: number): Uint8Array {
+  return createHash("sha256").update(`score:${fixtureId}:${home}-${away}`).digest();
 }
 
 function u64le(n: bigint): Buffer {

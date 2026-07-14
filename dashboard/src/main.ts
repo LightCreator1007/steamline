@@ -1,14 +1,10 @@
 // Steamline interactive dashboard: replays real captured TxLINE odds through
-// the actual detection engine, entirely in the browser. The engine modules
-// are the same files the agent runs; esbuild bundles them here.
-import { defaultConfig, newAgentState, type AgentState, type OddsPayload, type Signal } from "../../packages/engine/model.ts";
-import { normalizeOdds } from "../../packages/engine/normalize.ts";
-import { inMemoryLedger, type Ledger } from "../../packages/engine/ledger.ts";
-import { detectSteam } from "../../packages/engine/detect.ts";
-import { follow, fade, type Pick } from "../../packages/engine/strategy.ts";
-import { sizeStake } from "../../packages/engine/stake.ts";
-import { settlePosition, outcomeFromScore, resultToOutcomeName } from "../../packages/engine/settle.ts";
-import { applyGrade } from "../../packages/engine/grade.ts";
+// the actual detection engine, entirely in the browser. The pipeline is the
+// same analyzeFixture the agent and the web executor run; esbuild bundles it
+// here and this file only renders its trace.
+import { defaultConfig, newAgentState, type AgentState, type OddsPayload, type OddsTick, type Signal } from "../../packages/engine/model.ts";
+import { resultToOutcomeName } from "../../packages/engine/settle.ts";
+import { analyzeFixture, type Analysis } from "../../packages/agent/analyze.ts";
 
 interface Game {
   id: number;
@@ -21,18 +17,6 @@ interface Game {
   cal?: { theta: number; edgeMin: number };
 }
 
-interface SimPosition {
-  agent: 0 | 1;
-  outcome: string;
-  entryOdds: number;
-  stake: number;
-  belief: number;
-  edge: number;
-  signalSeq: number;
-  status: "open" | "won" | "lost";
-  payout: number;
-}
-
 const $ = (id: string) => document.getElementById(id)!;
 const EXPL = (sig: string, kind = "tx") => `https://explorer.solana.com/${kind}/${sig}?cluster=devnet`;
 const pts = (n: number) => n.toLocaleString("en-US");
@@ -43,21 +27,19 @@ let payloads: OddsPayload[] = [];
 let finalScore: { HomeScore: number; AwayScore: number } | null = null;
 
 // replay state
-let ledger: Ledger;
-let books: AgentState[];
-let signals: Signal[];
-let positions: SimPosition[];
-let tape: { ts: number; probs: number[] }[];
+let analysis: Analysis | null = null;
+let signalsSeen: Signal[] = [];
+let tape: { ts: number; probs: number[] }[] = [];
 let idx = 0;
 let timer: number | null = null;
-let seq = 0;
 let done = false;
 
-const cfg = () => ({
-  ...defaultConfig,
+const cal = () => ({
   theta: Number(($("theta") as HTMLInputElement).value) / 100,
   edgeMin: Number(($("edge") as HTMLInputElement).value) / 100,
 });
+
+const freshBooks = () => [newAgentState(0, defaultConfig.startingBankroll), newAgentState(1, defaultConfig.startingBankroll)];
 
 function outcomeName(o: string): string {
   if (!game) return o;
@@ -131,13 +113,10 @@ async function selectGame(id: number): Promise<void> {
 
 function resetReplay(): void {
   stop();
-  ledger = inMemoryLedger();
-  books = [newAgentState(0, defaultConfig.startingBankroll), newAgentState(1, defaultConfig.startingBankroll)];
-  signals = [];
-  positions = [];
+  analysis = game ? analyzeFixture(game.id, payloads, finalScore, cal()) : null;
+  signalsSeen = [];
   tape = [];
   idx = 0;
-  seq = 0;
   done = false;
   $("feed").innerHTML = "";
   $("settle").innerHTML = "";
@@ -145,107 +124,65 @@ function resetReplay(): void {
     <span class="chip">${game!.stage}</span><span class="chip">fixture ${game!.id}</span>
     <span class="chip" id="clock"></span>`;
   renderBoard(null);
-  renderBooks();
+  renderBooks(freshBooks());
   renderTape();
   fetchRunState().then(renderChainPanel);
   updatePlayButton();
 }
 
 function step(): void {
-  if (!game || idx >= payloads.length) {
+  if (!game || !analysis || idx >= analysis.trace.length) {
     if (!done) settleNow();
     stop();
     return;
   }
-  const c = cfg();
-  const p = payloads[idx++];
-  // Skip heartbeat/removal updates with empty or misaligned price arrays.
-  if (!Array.isArray(p.PriceNames) || !Array.isArray(p.Prices) || p.PriceNames.length !== p.Prices.length || p.PriceNames.length === 0 || p.Prices.some((x: number) => !(x > 1000))) {
-    return;
-  }
-  const tick = normalizeOdds(p, p.Ts, c);
-  ledger.append(tick);
-  tape.push({ ts: tick.ts, probs: tick.outcomes.map((o) => o.fairProb) });
-  renderBoard(tick);
+  const t = analysis.trace[idx++];
+  tape.push({ ts: t.tick.ts, probs: t.tick.outcomes.map((o) => o.fairProb) });
+  renderBoard(t.tick);
   renderTape();
   ($("clock") as HTMLElement).textContent =
-    new Date(tick.ts).toUTCString().slice(17, 25) + ` UTC · tick ${idx}/${payloads.length}`;
+    new Date(t.tick.ts).toUTCString().slice(17, 25) + ` UTC · tick ${idx}/${analysis.trace.length}`;
 
-  const sig = detectSteam(ledger, game.id, tick.market, c, () => seq++, { recentSignals: signals });
-  if (sig) {
-    signals.push(sig);
-    feed(
-      `<div class="ev steam"><b>STEAM #${signals.length}</b> on ${outcomeName(sig.outcome)}:
-       ${(sig.preProb * 100).toFixed(1)}% -> ${(sig.postProb * 100).toFixed(1)}%
-       (+${(sig.magnitude * 100).toFixed(1)}pp sustained)</div>`,
-    );
-    const win = ledger.window(game.id, tick.market, c.windowTicks + 1);
-    const pre = win[0];
-    const picks: (Pick | null)[] = [follow(sig, tick, pre, c), fade(sig, tick, pre, c)];
-    picks.forEach((pick, agent) => {
-      const name = agent === 0 ? "follow" : "fade";
-      if (!pick) {
-        feed(`<div class="ev hold"><b>${name}</b> holds: no outcome clears the ${(c.edgeMin * 100).toFixed(1)}% edge floor</div>`);
-        return;
-      }
-      const openHere = positions.filter((x) => x.agent === agent).length;
-      const stake = sizeStake(pick.belief, pick.entryOdds, books[agent], { killed: false, dailyLoss: 0 }, c, openHere);
-      if (stake <= 0) {
-        feed(`<div class="ev hold"><b>${name}</b> holds: stake sized to zero</div>`);
-        return;
-      }
-      books[agent] = {
-        ...books[agent],
-        bankrollPoints: books[agent].bankrollPoints - stake,
-        stakedPoints: books[agent].stakedPoints + stake,
-        betsOpened: books[agent].betsOpened + 1,
-      };
-      positions.push({
-        agent: agent as 0 | 1,
-        outcome: pick.outcome,
-        entryOdds: pick.entryOdds,
-        stake,
-        belief: pick.belief,
-        edge: pick.edge,
-        signalSeq: sig.seq,
-        status: "open",
-        payout: 0,
-      });
+  for (const ev of t.events) {
+    if (ev.kind === "signal") {
+      signalsSeen.push(ev.signal);
       feed(
-        `<div class="ev ${name}"><b>${name}</b> backs <b>${outcomeName(pick.outcome)}</b> at ${pick.entryOdds.toFixed(2)}
-         · stake ${pts(stake)} pts · edge ${(pick.edge * 100).toFixed(1)}%</div>`,
+        `<div class="ev steam"><b>STEAM #${signalsSeen.length}</b> on ${outcomeName(ev.signal.outcome)}:
+         ${(ev.signal.preProb * 100).toFixed(1)}% -> ${(ev.signal.postProb * 100).toFixed(1)}%
+         (+${(ev.signal.magnitude * 100).toFixed(1)}pp sustained)</div>`,
       );
-      renderBooks();
-    });
+    } else if (ev.kind === "hold") {
+      const name = ev.agent === 0 ? "follow" : "fade";
+      feed(
+        ev.reason === "no-edge"
+          ? `<div class="ev hold"><b>${name}</b> holds: no outcome clears the ${Number(($("edge") as HTMLInputElement).value).toFixed(1)}% edge floor</div>`
+          : `<div class="ev hold"><b>${name}</b> holds: stake sized to zero</div>`,
+      );
+    } else {
+      const d = ev.decision;
+      const name = d.agent === 0 ? "follow" : "fade";
+      feed(
+        `<div class="ev ${name}"><b>${name}</b> backs <b>${outcomeName(d.outcome)}</b> at ${d.entryOdds.toFixed(2)}
+         · stake ${pts(d.stake)} pts · edge ${(d.edge * 100).toFixed(1)}%</div>`,
+      );
+    }
   }
+  if (t.events.length > 0) renderBooks(t.books);
 }
 
 function settleNow(): void {
   done = true;
-  if (!finalScore || !game) return;
-  const result = outcomeFromScore(finalScore.HomeScore, finalScore.AwayScore);
-  const winName = resultToOutcomeName(result);
+  if (!finalScore || !game || !analysis || !analysis.result) return;
+  const winName = resultToOutcomeName(analysis.result);
   let rows = "";
-  for (const pos of positions) {
-    const r = settlePosition(
-      { agentId: pos.agent, fixtureId: game.id, signalSeq: pos.signalSeq, outcome: pos.outcome, stakePoints: pos.stake, entryOdds: pos.entryOdds, belief: pos.belief, status: "open", payoutPoints: 0 },
-      result,
-    );
-    pos.status = r.status;
-    pos.payout = r.payout;
-    books[pos.agent] = applyGrade(
-      { ...books[pos.agent], bankrollPoints: books[pos.agent].bankrollPoints + r.payout, stakedPoints: books[pos.agent].stakedPoints - pos.stake },
-      pos.belief,
-      r.status === "won" ? 1 : 0,
-      r.pnl,
-    );
-    rows += `<tr><td class="agent-${pos.agent === 0 ? "follow" : "fade"}">${pos.agent === 0 ? "follow" : "fade"}</td>
-      <td>${outcomeName(pos.outcome)}</td><td class="odds">${pos.entryOdds.toFixed(2)}</td>
-      <td>${pts(pos.stake)}</td><td><span class="${pos.status}">${pos.status.toUpperCase()}</span></td>
-      <td>${pts(pos.payout)}</td></tr>`;
+  for (const d of analysis.decisions) {
+    rows += `<tr><td class="agent-${d.agent === 0 ? "follow" : "fade"}">${d.agent === 0 ? "follow" : "fade"}</td>
+      <td>${outcomeName(d.outcome)}</td><td class="odds">${d.entryOdds.toFixed(2)}</td>
+      <td>${pts(d.stake)}</td><td><span class="${d.status}">${d.status.toUpperCase()}</span></td>
+      <td>${pts(d.payout)}</td></tr>`;
   }
-  renderBooks();
-  const noTrades = positions.length === 0;
+  renderBooks(analysis.books);
+  const noTrades = analysis.decisions.length === 0;
   $("settle").innerHTML = `
     <div class="eyebrow">Settlement · regulation score</div>
     <div class="finalbox">FT ${finalScore.HomeScore}-${finalScore.AwayScore} · ${outcomeName(winName)} wins</div>
@@ -289,11 +226,11 @@ async function executeOnChain(): Promise<void> {
   renderChainPanel();
 }
 
-function renderBoard(tick: any): void {
+function renderBoard(tick: OddsTick | null): void {
   const names = ["1", "X", "2"];
   $("board").innerHTML = names
-    .map((n, i) => {
-      const oc = tick?.outcomes.find((o: any) => o.name === n);
+    .map((n) => {
+      const oc = tick?.outcomes.find((o) => o.name === n);
       return `<div class="tile"><div class="tname">${outcomeName(n)}</div>
         <div class="todds">${oc ? oc.decimalOdds.toFixed(2) : "-.--"}</div>
         <div class="tprob">${oc ? (oc.fairProb * 100).toFixed(1) + "%" : ""}</div></div>`;
@@ -301,7 +238,7 @@ function renderBoard(tick: any): void {
     .join("");
 }
 
-function renderBooks(): void {
+function renderBooks(books: AgentState[]): void {
   $("books").innerHTML = books
     .map((b, i) => {
       const name = i === 0 ? "follow" : "fade";
@@ -339,12 +276,12 @@ function renderTape(): void {
   }
   let paths = "";
   for (let k = 0; k < 3; k++) {
-    const steamed = signals.length > 0 && signals[0].outcome === ["1", "X", "2"][k];
+    const steamed = signalsSeen.length > 0 && signalsSeen[0].outcome === ["1", "X", "2"][k];
     const d = tape.map((p, i) => `${i ? "L" : "M"}${x(p.ts).toFixed(1)},${y(p.probs[k]).toFixed(1)}`).join("");
     paths += `<path d="${d}" fill="none" stroke="${colors[k]}" stroke-width="${steamed ? 2.4 : 1.1}" opacity="${steamed ? 1 : 0.6}"/>`;
   }
   let marks = "";
-  signals.forEach((s, n) => {
+  signalsSeen.forEach((s, n) => {
     const xx = x(s.ts);
     const flip = xx > W * 0.8;
     marks += `<line x1="${xx}" x2="${xx}" y1="${PAD}" y2="${H - PAD}" stroke="#ff7a5c" stroke-width="1" stroke-dasharray="3 3"/>
@@ -423,7 +360,7 @@ function updatePlayButton(): void {
 
 function skipToEnd(): void {
   stop();
-  while (idx < payloads.length) step();
+  while (analysis && idx < analysis.trace.length) step();
   if (!done) settleNow();
   updatePlayButton();
 }

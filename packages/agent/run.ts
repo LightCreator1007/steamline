@@ -4,27 +4,24 @@
 // leaderboard with on-chain vs engine parity.
 // Usage: node --experimental-strip-types packages/agent/run.ts fixtures/demo-901 [fixtureId]
 // Env: DRY_RUN=1 skips all chain calls; DEMO_TICK_MS paces the replay (default 1200).
-import { createHash } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
-import { defaultConfig, newAgentState, type AgentState, type PositionRecord, type Signal } from "../engine/model.ts";
-import { normalizeOdds } from "../engine/normalize.ts";
-import { inMemoryLedger } from "../engine/ledger.ts";
-import { detectSteam } from "../engine/detect.ts";
-import { follow, fade, type Pick } from "../engine/strategy.ts";
-import { sizeStake, type SafetyState } from "../engine/stake.ts";
-import { settlePosition as settleLocal, outcomeFromScore } from "../engine/settle.ts";
-import { applyGrade } from "../engine/grade.ts";
+import { defaultConfig, type OddsPayload, type Outcome } from "../engine/model.ts";
+import { resultToOutcomeName } from "../engine/settle.ts";
 import { standing, renderMarkdown } from "../engine/report.ts";
 import { replaySource } from "../feed/replaySource.ts";
+import { analyzeFixture, type AnalyzedDecision } from "./analyze.ts";
 import {
   arenaPda,
   bookPda,
   explorer,
   loadKeypair,
   matchPda,
+  oddsMsgRef,
   openPositionIx,
+  outcomeCode,
   positionPda,
+  scoreProofRef,
   send,
   settleMatchIx,
   settlePositionIx,
@@ -39,7 +36,6 @@ const SEASON_ID = BigInt(process.env.SEASON ?? "2026");
 const fixtureDir = process.argv[2] ?? "fixtures/demo-901";
 const fixtureId = Number(process.argv[3] ?? fixtureDir.match(/(\d+)\/?$/)?.[1] ?? 901);
 
-const OUTCOME_CODE: Record<string, number> = { "1": 0, X: 1, "2": 2 };
 // THETA and EDGE_MIN env overrides calibrate for quiet demo windows and
 // TxLINE's demargined stable line (no vig cushion); production defaults stay
 // 0.03 / 0.02.
@@ -49,21 +45,16 @@ const cfg = {
   edgeMin: Number(process.env.EDGE_MIN ?? defaultConfig.edgeMin),
 };
 
-function sha256(s: string): Uint8Array {
-  return createHash("sha256").update(s).digest();
-}
-
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-function fmtProbs(outcomes: { name: string; fairProb: number; decimalOdds: number }[]): string {
+function fmtProbs(outcomes: Outcome[]): string {
   return outcomes.map((o) => `${o.name}=${o.decimalOdds.toFixed(2)} (${(o.fairProb * 100).toFixed(1)}%)`).join("  ");
 }
 
 interface OpenPos {
-  record: PositionRecord;
-  pick: Pick;
+  d: AnalyzedDecision;
   address?: PublicKey;
   openTx?: string;
   settleTx?: string;
@@ -92,167 +83,120 @@ async function main(): Promise<void> {
   // Books persist across matches; parity compares this run's deltas.
   const startBooks = DRY ? [] : await Promise.all(books.map((b) => readBook(b)));
 
-  const ledger = inMemoryLedger();
-  const bookStates: AgentState[] = [newAgentState(0, cfg.startingBankroll), newAgentState(1, cfg.startingBankroll)];
-  const safety: SafetyState = { killed: false, dailyLoss: 0 };
-  const signals: Signal[] = [];
+  const payloads: OddsPayload[] = [];
+  let scorePayload: { HomeScore?: number; AwayScore?: number } | null = null;
+  for await (const ev of replaySource(`${ROOT}${fixtureDir}`).events()) {
+    if (ev.kind === "odds") payloads.push(ev.payload);
+    else scorePayload ??= ev.payload;
+  }
+  const score = scorePayload
+    ? { HomeScore: Number(scorePayload.HomeScore ?? 0), AwayScore: Number(scorePayload.AwayScore ?? 0) }
+    : null;
+
+  const analysis = analyzeFixture(fixtureId, payloads, score, { theta: cfg.theta, edgeMin: cfg.edgeMin });
   const openPositions: OpenPos[] = [];
-  let seq = 0;
-  const nextSeq = () => seq++;
-  let settled = false;
-  const tape: { ts: number; probs: number[]; seq?: number }[] = [];
   let settleMatchTx: string | undefined;
   let finalScore: { home: number; away: number; outcome: string } | undefined;
 
-  for await (const ev of replaySource(`${ROOT}${fixtureDir}`).events()) {
-    if (ev.kind === "odds") {
-      // Re-key to the CLI fixture id so retakes can use a fresh on-chain match
-      // (position PDAs are idempotent per fixture + signal_seq by design).
-      ev.payload.FixtureId = fixtureId;
-      const tick = normalizeOdds(ev.payload, ev.payload.Ts, cfg);
-      ledger.append(tick);
-      tape.push({ ts: tick.ts, probs: tick.outcomes.map((o) => Number(o.fairProb.toFixed(4))) });
-      console.log(`tick ${tick.messageId}  ${fmtProbs(tick.outcomes)}`);
-
-      const sig = detectSteam(ledger, fixtureId, tick.market, cfg, nextSeq, { recentSignals: signals });
-      if (sig) {
-        signals.push(sig);
+  for (const t of analysis.trace) {
+    console.log(`tick ${t.tick.messageId}  ${fmtProbs(t.tick.outcomes)}`);
+    let signalled = false;
+    for (const ev of t.events) {
+      if (ev.kind === "signal") {
+        signalled = true;
+        const sig = ev.signal;
         console.log(
           `\n*** STEAM on outcome "${sig.outcome}": ${(sig.preProb * 100).toFixed(1)}% -> ${(sig.postProb * 100).toFixed(1)}% ` +
             `(delta ${(sig.magnitude * 100).toFixed(1)}pp, ${sig.method}) ***`,
         );
-        const win = ledger.window(fixtureId, tick.market, cfg.windowTicks + 1);
-        const preTick = win[0];
-        const picks: (Pick | null)[] = [follow(sig, tick, preTick, cfg), fade(sig, tick, preTick, cfg)];
-        for (let agentId = 0 as 0 | 1; agentId < 2; agentId++) {
-          const pick = picks[agentId];
-          const name = agentId === 0 ? "follow" : "fade";
-          if (!pick) {
-            console.log(`${name}: HOLD (no positive edge)`);
-            continue;
-          }
-          const openHere = openPositions.filter((p) => p.record.agentId === agentId).length;
-          const stake = sizeStake(pick.belief, pick.entryOdds, bookStates[agentId], safety, cfg, openHere);
-          if (stake <= 0) {
-            console.log(`${name}: HOLD (stake sized to zero)`);
-            continue;
-          }
-          const record: PositionRecord = {
-            agentId,
-            fixtureId,
-            signalSeq: sig.seq,
-            outcome: pick.outcome,
-            stakePoints: stake,
-            entryOdds: pick.entryOdds,
-            belief: pick.belief,
-            status: "open",
-            payoutPoints: 0,
-          };
-          bookStates[agentId] = {
-            ...bookStates[agentId],
-            bankrollPoints: bookStates[agentId].bankrollPoints - stake,
-            stakedPoints: bookStates[agentId].stakedPoints + stake,
-            betsOpened: bookStates[agentId].betsOpened + 1,
-          };
-          const pos: OpenPos = { record, pick };
-          openPositions.push(pos);
-          console.log(
-            `${name}: BACK "${pick.outcome}" at ${pick.entryOdds.toFixed(2)}, ` +
-              `stake ${stake.toLocaleString()} pts (edge ${(pick.edge * 100).toFixed(1)}%, belief ${(pick.belief * 100).toFixed(1)}%)`,
-          );
-          if (!DRY) {
-            pos.address = positionPda(game, books[agentId], BigInt(sig.seq));
-            const txSig = await send(
-              connection!,
-              [
-                openPositionIx({
-                  authority: agents[agentId].publicKey,
-                  book: books[agentId],
-                  game,
-                  fixtureId: BigInt(fixtureId),
-                  outcome: OUTCOME_CODE[pick.outcome],
-                  stakePoints: BigInt(stake),
-                  entryOddsMilli: Math.round(pick.entryOdds * 1000),
-                  edgeBps: Math.round(pick.edge * 10000),
-                  oddsMsgRef: sha256(sig.messageId),
-                  oddsTs: BigInt(sig.ts),
-                  signalSeq: BigInt(sig.seq),
-                }),
-              ],
-              agents[agentId],
-            );
-            pos.openTx = txSig;
-            console.log(`${name}: open_position tx ${explorer(txSig)}`);
-          }
-        }
-        console.log("");
-      }
-      await sleep(TICK_MS);
-    } else if (!settled) {
-      const home = Number(ev.payload.HomeScore ?? 0);
-      const away = Number(ev.payload.AwayScore ?? 0);
-      settled = true;
-      const result = outcomeFromScore(home, away);
-      finalScore = { home, away, outcome: result };
-      console.log(`\n=== regulation final: ${home}-${away} (${result}) ===`);
-
-      if (!DRY) {
-        const outcomeCode = result === "home" ? 0 : result === "away" ? 2 : 1;
-        const txSig = await send(
-          connection!,
-          [
-            settleMatchIx({
-              authority: deployer!.publicKey,
-              arena,
-              game,
-              fixtureId: BigInt(fixtureId),
-              homeScore: home,
-              awayScore: away,
-              settledOutcome: outcomeCode,
-              scoreProofRef: sha256(`score:${fixtureId}:${home}-${away}`),
-            }),
-          ],
-          deployer!,
-        );
-        settleMatchTx = txSig;
-        console.log(`settle_match tx ${explorer(txSig)}`);
-      }
-
-      for (const pos of openPositions) {
-        const r = settleLocal(pos.record, result);
-        const hit: 0 | 1 = r.status === "won" ? 1 : 0;
-        const agentId = pos.record.agentId;
-        bookStates[agentId] = applyGrade(
-          {
-            ...bookStates[agentId],
-            bankrollPoints: bookStates[agentId].bankrollPoints + r.payout,
-            stakedPoints: bookStates[agentId].stakedPoints - pos.record.stakePoints,
-          },
-          pos.record.belief,
-          hit,
-          r.pnl,
-        );
-        pos.record.status = r.status;
-        pos.record.payoutPoints = r.payout;
-        const name = agentId === 0 ? "follow" : "fade";
+      } else if (ev.kind === "hold") {
+        const name = ev.agent === 0 ? "follow" : "fade";
+        console.log(`${name}: HOLD (${ev.reason === "no-edge" ? "no positive edge" : "stake sized to zero"})`);
+      } else {
+        const d = ev.decision;
+        const name = d.agent === 0 ? "follow" : "fade";
+        const pos: OpenPos = { d };
+        openPositions.push(pos);
         console.log(
-          `${name}: "${pos.record.outcome}" ${r.status.toUpperCase()}, payout ${r.payout.toLocaleString()}, pnl ${r.pnl.toLocaleString()}`,
+          `${name}: BACK "${d.outcome}" at ${d.entryOdds.toFixed(2)}, ` +
+            `stake ${d.stake.toLocaleString()} pts (edge ${(d.edge * 100).toFixed(1)}%, belief ${(d.belief * 100).toFixed(1)}%)`,
         );
-        if (!DRY && pos.address) {
+        if (!DRY) {
+          pos.address = positionPda(game, books[d.agent], BigInt(d.signalSeq));
           const txSig = await send(
             connection!,
-            [settlePositionIx({ game, position: pos.address, book: books[agentId] })],
-            deployer!,
+            [
+              openPositionIx({
+                authority: agents[d.agent].publicKey,
+                book: books[d.agent],
+                game,
+                fixtureId: BigInt(fixtureId),
+                outcome: outcomeCode(d.outcome),
+                stakePoints: BigInt(d.stake),
+                entryOddsMilli: d.entryOddsMilli,
+                edgeBps: d.edgeBps,
+                oddsMsgRef: oddsMsgRef(d.messageId),
+                oddsTs: BigInt(d.ts),
+                signalSeq: BigInt(d.signalSeq),
+              }),
+            ],
+            agents[d.agent],
           );
-          pos.settleTx = txSig;
-          console.log(`${name}: settle_position tx ${explorer(txSig)}`);
+          pos.openTx = txSig;
+          console.log(`${name}: open_position tx ${explorer(txSig)}`);
         }
+      }
+    }
+    if (signalled) console.log("");
+    await sleep(TICK_MS);
+  }
+
+  if (score && analysis.result) {
+    const result = analysis.result;
+    finalScore = { home: score.HomeScore, away: score.AwayScore, outcome: result };
+    console.log(`\n=== regulation final: ${score.HomeScore}-${score.AwayScore} (${result}) ===`);
+
+    if (!DRY) {
+      const txSig = await send(
+        connection!,
+        [
+          settleMatchIx({
+            authority: deployer!.publicKey,
+            arena,
+            game,
+            fixtureId: BigInt(fixtureId),
+            homeScore: score.HomeScore,
+            awayScore: score.AwayScore,
+            settledOutcome: outcomeCode(resultToOutcomeName(result)),
+            scoreProofRef: scoreProofRef(fixtureId, score.HomeScore, score.AwayScore),
+          }),
+        ],
+        deployer!,
+      );
+      settleMatchTx = txSig;
+      console.log(`settle_match tx ${explorer(txSig)}`);
+    }
+
+    for (const pos of openPositions) {
+      const d = pos.d;
+      const name = d.agent === 0 ? "follow" : "fade";
+      console.log(
+        `${name}: "${d.outcome}" ${d.status.toUpperCase()}, payout ${d.payout.toLocaleString()}, pnl ${(d.payout - d.stake).toLocaleString()}`,
+      );
+      if (!DRY && pos.address) {
+        const txSig = await send(
+          connection!,
+          [settlePositionIx({ game, position: pos.address, book: books[d.agent] })],
+          deployer!,
+        );
+        pos.settleTx = txSig;
+        console.log(`${name}: settle_position tx ${explorer(txSig)}`);
       }
     }
   }
 
   console.log("\n=== leaderboard (engine replay) ===");
-  console.log(renderMarkdown(bookStates.map((b) => standing(b))));
+  console.log(renderMarkdown(analysis.books.map((b) => standing(b))));
 
   // Snapshot for the hosted dashboard: everything a judge needs to inspect
   // the run without the terminal.
@@ -267,22 +211,22 @@ async function main(): Promise<void> {
     match: game.toBase58(),
     books: DRY ? [] : books.map((b, i) => ({ agent: i === 0 ? "follow" : "fade", address: b.toBase58() })),
     outcomes: ["1", "X", "2"],
-    tape,
-    signals: signals.map((s) => ({ ts: s.ts, outcome: s.outcome, preProb: s.preProb, postProb: s.postProb, seq: s.seq })),
+    tape: analysis.trace.map((t) => ({ ts: t.tick.ts, probs: t.tick.outcomes.map((o) => Number(o.fairProb.toFixed(4))) })),
+    signals: analysis.signals.map((s) => ({ ts: s.ts, outcome: s.outcome, preProb: s.preProb, postProb: s.postProb, seq: s.seq })),
     positions: openPositions.map((p) => ({
-      agent: p.record.agentId === 0 ? "follow" : "fade",
-      outcome: p.record.outcome,
-      entryOdds: p.record.entryOdds,
-      stake: p.record.stakePoints,
-      status: p.record.status,
-      payout: p.record.payoutPoints,
-      signalSeq: p.record.signalSeq,
+      agent: p.d.agent === 0 ? "follow" : "fade",
+      outcome: p.d.outcome,
+      entryOdds: p.d.entryOdds,
+      stake: p.d.stake,
+      status: p.d.status,
+      payout: p.d.payout,
+      signalSeq: p.d.signalSeq,
       openTx: p.openTx ?? null,
       settleTx: p.settleTx ?? null,
     })),
     finalScore: finalScore ?? null,
     settleMatchTx: settleMatchTx ?? null,
-    standings: bookStates.map((b) => standing(b)),
+    standings: analysis.books.map((b) => standing(b)),
     config: { theta: cfg.theta, edgeMin: cfg.edgeMin, windowTicks: cfg.windowTicks, startingBankroll: cfg.startingBankroll },
   };
   writeFileSync(`${ROOT}dashboard/state.json`, JSON.stringify(state, null, 1));
@@ -298,7 +242,7 @@ async function main(): Promise<void> {
         console.log(`${name}: book MISSING on-chain`);
         continue;
       }
-      const local = bookStates[agentId];
+      const local = analysis.books[agentId];
       const dBankroll = end.bankroll - start.bankroll;
       const dPnl = end.pnl - start.pnl;
       const engBankroll = BigInt(local.bankrollPoints - cfg.startingBankroll);

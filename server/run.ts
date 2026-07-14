@@ -2,15 +2,18 @@
 // GET  /api/run?fixture=<id>  -> canonical run status, reconstructed from chain
 // POST /api/run?fixture=<id>  -> execute the canonical run once (PDAs are the lock)
 // Keys come from env vars (dedicated web keypairs, never the main deployer).
-import { createHash } from "node:crypto";
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
+import { outcomeFromScore, resultToOutcomeName } from "../packages/engine/settle.ts";
 import { analyzeFixture, type AnalyzedDecision } from "../packages/agent/analyze.ts";
 import {
   arenaPda,
   bookPda,
   matchPda,
+  oddsMsgRef,
   openPositionIx,
+  outcomeCode,
   positionPda,
+  scoreProofRef,
   send,
   settleMatchIx,
   settlePositionIx,
@@ -22,10 +25,6 @@ function envKeypair(name: string): Keypair {
   const raw = process.env[name];
   if (!raw) throw new Error(`missing env ${name}`);
   return Keypair.fromSecretKey(Uint8Array.from(JSON.parse(raw)));
-}
-
-function sha256(s: string): Uint8Array {
-  return createHash("sha256").update(s).digest();
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
@@ -90,11 +89,11 @@ export default async function handler(req: any, res: any): Promise<void> {
                 book: books[d.agent],
                 game: match,
                 fixtureId: BigInt(fixtureId),
-                outcome: { "1": 0, X: 1, "2": 2 }[d.outcome] ?? 255,
+                outcome: outcomeCode(d.outcome),
                 stakePoints: BigInt(d.stake),
                 entryOddsMilli: d.entryOddsMilli,
                 edgeBps: d.edgeBps,
-                oddsMsgRef: sha256(d.messageId),
+                oddsMsgRef: oddsMsgRef(d.messageId),
                 oddsTs: BigInt(d.ts),
                 signalSeq: BigInt(d.signalSeq),
               }),
@@ -107,7 +106,7 @@ export default async function handler(req: any, res: any): Promise<void> {
         }
       }
       if (finalScore) {
-        const outcome = finalScore.HomeScore > finalScore.AwayScore ? 0 : finalScore.HomeScore < finalScore.AwayScore ? 2 : 1;
+        const outcome = outcomeCode(resultToOutcomeName(outcomeFromScore(finalScore.HomeScore, finalScore.AwayScore)));
         try {
           await send(
             connection,
@@ -120,7 +119,7 @@ export default async function handler(req: any, res: any): Promise<void> {
                 homeScore: finalScore.HomeScore,
                 awayScore: finalScore.AwayScore,
                 settledOutcome: outcome,
-                scoreProofRef: sha256(`score:${fixtureId}:${finalScore.HomeScore}-${finalScore.AwayScore}`),
+                scoreProofRef: scoreProofRef(fixtureId, finalScore.HomeScore, finalScore.AwayScore),
               }),
             ],
             authority,
