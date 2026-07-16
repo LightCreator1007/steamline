@@ -238,15 +238,25 @@
     "home": "France",
     "away": "Spain",
     "stage": "Semi-final",
-    "date": "Jul 14 · 19:00 UTC",
-    "live": true
+    "date": "Jul 14",
+    "kickoff": "2026-07-14T19:00:00Z",
+    "final": "0-2",
+    "cal": {
+      "theta": 0.005,
+      "edgeMin": 0.005
+    }
   },
   {
     "id": 18241006,
     "home": "England",
     "away": "Argentina",
     "stage": "Semi-final",
-    "date": "Jul 15 · 19:00 UTC",
-    "live": true
+    "date": "Jul 15",
+    "kickoff": "2026-07-15T19:00:00Z",
+    "final": "1-2",
+    "cal": {
+      "theta": 0.005,
+      "edgeMin": 0.005
+    }
   }
 ]
