@@ -12,7 +12,7 @@ import { defaultConfig, type EngineConfig, type OddsPayload } from "../engine/mo
 import { resultToOutcomeName, type Result } from "../engine/settle.ts";
 import { standing, renderMarkdown } from "../engine/report.ts";
 import { type FeedSource } from "../feed/source.ts";
-import { appendJsonl } from "../feed/replaySource.ts";
+import { appendJsonl, readJsonl } from "../feed/replaySource.ts";
 import { liveSource } from "../feed/liveSource.ts";
 import { loadEnv, type Network } from "../feed/env.ts";
 import { loadCreds } from "../feed/creds.ts";
@@ -117,16 +117,60 @@ export async function liveTrade(o: LiveTradeOpts): Promise<LiveTradeResult> {
   const minGap = o.minGapMs ?? 60_000;
   const deadline = o.deadlineMs ?? o.kickoffMs + 6 * 3_600_000;
   const ac = new AbortController();
-  const payloads: OddsPayload[] = [];
   const openTxs = new Map<string, string>();
   const loggedSignals = new Set<number>();
-  let lastTs = 0;
   let final: { HomeScore: number; AwayScore: number } | null = null;
-  let analysis = analyzeFixture(o.fixtureId, payloads, null, o.cal);
 
   const persist = (name: string, value: unknown): void => {
     if (o.outDir) appendJsonl(join(o.outDir, String(o.fixtureId), name), value);
   };
+
+  // Resume from the persisted capture after a crash: the same prefix yields
+  // the same signal seqs, so positions opened before the restart line up.
+  const payloads: OddsPayload[] = o.outDir ? readJsonl<OddsPayload>(join(o.outDir, String(o.fixtureId), "odds.jsonl")) : [];
+  let lastTs = payloads.length > 0 ? payloads[payloads.length - 1].Ts : 0;
+  if (payloads.length > 0) log(`resumed from ${payloads.length} persisted ticks`);
+  let analysis = analyzeFixture(o.fixtureId, payloads, null, o.cal);
+
+  const handleAnalysis = async (a: Analysis): Promise<void> => {
+    for (const s of a.signals) {
+      if (loggedSignals.has(s.seq)) continue;
+      loggedSignals.add(s.seq);
+      log(
+        `*** STEAM on "${s.outcome}": ${(s.preProb * 100).toFixed(1)}% -> ${(s.postProb * 100).toFixed(1)}% ` +
+          `(delta ${(s.magnitude * 100).toFixed(1)}pp, ${s.method}) ***`,
+      );
+    }
+    for (const d of a.decisions) {
+      const key = `${d.agent}:${d.signalSeq}`;
+      if (openTxs.has(key)) continue;
+      const name = d.agent === 0 ? "follow" : "fade";
+      log(
+        `${name}: BACK "${d.outcome}" at ${d.entryOdds.toFixed(2)}, stake ${d.stake.toLocaleString()} pts ` +
+          `(edge ${(d.edge * 100).toFixed(1)}%, seq ${d.signalSeq})`,
+      );
+      if (!o.chain) {
+        openTxs.set(key, "dry-run");
+        continue;
+      }
+      try {
+        const sig = await o.chain.open(d);
+        openTxs.set(key, sig);
+        log(`${name}: open_position tx ${explorer(sig)}`);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (msg.includes("already in use") || msg.includes("custom program error: 0x0")) {
+          // A duplicate open is a PDA init collision: the position is already
+          // on chain from before a restart, adopt it.
+          openTxs.set(key, "pre-existing");
+          log(`${name}: position already on chain, adopted`);
+        } else {
+          log(`${name}: open failed, retrying next tick: ${msg}`);
+        }
+      }
+    }
+  };
+  await handleAnalysis(analysis);
 
   for await (const ev of o.source.events(ac.signal)) {
     if (Date.now() >= deadline) {
@@ -153,36 +197,7 @@ export async function liveTrade(o: LiveTradeOpts): Promise<LiveTradeResult> {
       `tick ${t.tick.messageId}  ` +
         t.tick.outcomes.map((x) => `${x.name}=${x.decimalOdds.toFixed(2)} (${(x.fairProb * 100).toFixed(1)}%)`).join("  "),
     );
-    for (const s of analysis.signals) {
-      if (loggedSignals.has(s.seq)) continue;
-      loggedSignals.add(s.seq);
-      log(
-        `*** STEAM on "${s.outcome}": ${(s.preProb * 100).toFixed(1)}% -> ${(s.postProb * 100).toFixed(1)}% ` +
-          `(delta ${(s.magnitude * 100).toFixed(1)}pp, ${s.method}) ***`,
-      );
-    }
-    for (const d of analysis.decisions) {
-      const key = `${d.agent}:${d.signalSeq}`;
-      if (openTxs.has(key)) continue;
-      const name = d.agent === 0 ? "follow" : "fade";
-      log(
-        `${name}: BACK "${d.outcome}" at ${d.entryOdds.toFixed(2)}, stake ${d.stake.toLocaleString()} pts ` +
-          `(edge ${(d.edge * 100).toFixed(1)}%, seq ${d.signalSeq})`,
-      );
-      if (!o.chain) {
-        openTxs.set(key, "dry-run");
-        continue;
-      }
-      try {
-        const sig = await o.chain.open(d);
-        openTxs.set(key, sig);
-        log(`${name}: open_position tx ${explorer(sig)}`);
-      } catch (e) {
-        // A duplicate open is a PDA init collision and fails harmlessly; a
-        // transient RPC error retries on the next accepted tick.
-        log(`${name}: open failed, retrying next tick: ${e instanceof Error ? e.message : String(e)}`);
-      }
-    }
+    await handleAnalysis(analysis);
   }
   ac.abort();
 
@@ -258,13 +273,15 @@ async function mainLive(): Promise<void> {
   let finalAnalysis: Analysis | null = null;
   if (!DRY) {
     const connection = new Connection(RPC, "confirmed");
-    const deployer = loadKeypair(`${ROOT}keypairs/deployer.json`);
-    const follow = loadOrCreate(`${ROOT}keypairs/agent-follow.json`);
-    const fade = loadOrCreate(`${ROOT}keypairs/agent-fade.json`);
+    // Keypair paths are overridable so the run can target the public web
+    // arena (777, keypairs/web-*.json) instead of the CLI agents.
+    const authority = loadKeypair(`${ROOT}${process.env.AUTHORITY_KEYPAIR ?? "keypairs/deployer.json"}`);
+    const follow = loadOrCreate(`${ROOT}${process.env.FOLLOW_KEYPAIR ?? "keypairs/agent-follow.json"}`);
+    const fade = loadOrCreate(`${ROOT}${process.env.FADE_KEYPAIR ?? "keypairs/agent-fade.json"}`);
     const agents = [follow, fade];
     await initArena({
       season: seasonId,
-      authority: deployer,
+      authority,
       follow,
       fade,
       fixtures: [BigInt(fixtureId)],
@@ -302,7 +319,7 @@ async function mainLive(): Promise<void> {
           connection,
           [
             settleMatchIx({
-              authority: deployer.publicKey,
+              authority: authority.publicKey,
               arena,
               game,
               fixtureId: BigInt(fixtureId),
@@ -312,13 +329,13 @@ async function mainLive(): Promise<void> {
               scoreProofRef: scoreProofRef(fixtureId, home, away),
             }),
           ],
-          deployer,
+          authority,
         ),
       settlePosition: (d) =>
         send(
           connection,
           [settlePositionIx({ game, position: positionPda(game, books[d.agent], BigInt(d.signalSeq)), book: books[d.agent] })],
-          deployer,
+          authority,
         ),
     };
 

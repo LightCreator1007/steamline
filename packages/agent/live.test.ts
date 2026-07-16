@@ -8,8 +8,9 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:http";
-import { readJsonl } from "../feed/replaySource.ts";
+import { appendJsonl, readJsonl } from "../feed/replaySource.ts";
 import { liveSource } from "../feed/liveSource.ts";
+import { type FeedSource } from "../feed/source.ts";
 import { type TxlineClient, type ScoreEvent } from "../feed/txlineClient.ts";
 import { type OddsPayload } from "../engine/model.ts";
 import { analyzeFixture } from "./analyze.ts";
@@ -141,6 +142,61 @@ test("live driver end to end: SSE stream in, opens as signals fire, settles at f
   for (const [i, c] of calls.entries()) {
     if (c.startsWith("open:")) assert.ok(i < settleIdx, `open after settle: ${c}`);
   }
+  assert.equal(res.settleTxs.size, oracle.decisions.length);
+
+  rmSync(outDir, { recursive: true, force: true });
+});
+
+test("restart resumes from the persisted capture and adopts existing positions", async () => {
+  assert.ok(finalEvent);
+  const expected = acceptedPayloads();
+  const oracle = analyzeFixture(FID, expected, { HomeScore: 1, AwayScore: 2 }, CAL);
+  assert.ok(oracle.decisions.length > 0);
+
+  // Simulate a prior session that accepted the whole window and opened every
+  // position on chain, then died before full time.
+  const outDir = mkdtempSync(join(tmpdir(), "steamline-restart-"));
+  for (const p of expected) appendJsonl(join(outDir, String(FID), "odds.jsonl"), p);
+
+  const calls: string[] = [];
+  const chain: LiveChain = {
+    open: async (d) => {
+      calls.push(`open:${d.agent}:${d.signalSeq}`);
+      throw new Error("Allocate: account already in use");
+    },
+    settleMatch: async (home, away) => {
+      calls.push(`settleMatch:${home}-${away}`);
+      return "settle-match-sig";
+    },
+    settlePosition: async (d) => {
+      calls.push(`settlePos:${d.agent}:${d.signalSeq}`);
+      return `settle-${d.agent}-${d.signalSeq}`;
+    },
+  };
+  // The restarted session only sees the finalise; all odds are pre-persisted.
+  const source: FeedSource = {
+    async *events() {
+      yield { kind: "score", ts: 0, payload: finalEvent };
+    },
+  };
+
+  const res = await liveTrade({
+    fixtureId: FID,
+    kickoffMs: KICKOFF,
+    source,
+    cal: CAL,
+    chain,
+    outDir,
+    deadlineMs: Date.now() + 60_000,
+    log: () => {},
+  });
+
+  // Same prefix, same seqs, same decisions as the uninterrupted run.
+  assert.deepEqual(res.analysis.decisions, oracle.decisions);
+  assert.deepEqual(res.final, { HomeScore: 1, AwayScore: 2 });
+  for (const v of res.openTxs.values()) assert.equal(v, "pre-existing");
+  // Adopted positions still settle.
+  assert.equal(res.settleMatchTx, "settle-match-sig");
   assert.equal(res.settleTxs.size, oracle.decisions.length);
 
   rmSync(outDir, { recursive: true, force: true });
