@@ -13,7 +13,7 @@ Built for the TxLINE World Cup hackathon, track 3 (autonomous agents).
 - **Steam detection on a demargined consensus line.** The agent ingests the `TXLineStablePriceDemargined` book, whose vig is already stripped, so an odds shift is a real change in consensus probability rather than a bookmaker margin artifact. Detection is pre-match only by default: a mid-match goal moves the line, but that is news, not steam.
 - **Two strategies, one signal.** Follow and fade each hold their own bankroll and settle against the same real regulation score. The arena is a scoreboard for opposing hypotheses.
 - **Permissionless arena.** Any strategy can register a book against a season and compete. Bankrolls are play-money points; system equity is conserved (stake debited on open, payout credited on settle).
-- **Provenance-verified settlement.** Beyond authority settlement, the program carries an in-program Merkle verification path that checks a TxLINE score proof against the Txoracle roots account, no CPI. The verification module and fold are built and tested; wiring it as the default settlement path is the current roadmap item (see the docs site). Until that lands, settlement is authority-gated and the wording stays "provenance-verified", not "trustless".
+- **Provenance-verified settlement.** Beyond authority settlement, the program carries `settle_match_verified`: an in-program Merkle path that checks a TxLINE score proof against the Txoracle roots account, with no CPI. It validates the roots account owner and PDA derivation, reads the anchored root at a configured offset, and folds the proof back to it. The instruction is written and covered by LiteSVM tests, but the deployed devnet program still predates it, so what runs today is authority-gated `settle_match`. The proof establishes that the leaf is a member of TxLINE's published tree; it does not yet bind that leaf to the score arguments, which is why the wording is "provenance-verified" and not "trustless". Pinning the leaf preimage and dropping the `leaf_data` argument is the upgrade path.
 
 ## How it fits together
 
@@ -27,10 +27,10 @@ TxLINE API ──▶ feed ──▶ engine ──▶ agent ──▶ steamline_a
 | --- | --- | --- |
 | `packages/engine` | Pure, dependency-free TypeScript. Normalize odds, maintain the tick ledger, detect steam, size stakes, settle on regulation score, grade. Runs unchanged in Node and in the browser. | 50 |
 | `packages/feed` | TxLINE client: guest auth, subscription bootstrap, historical odds/scores capture, live SSE, Merkle proof validation. | 31 |
-| `packages/agent` | Devnet runtime. Hand-encodes the seven program instructions from the IDL (no Anchor TS client), bootstraps the arena, replays a fixture, and reconciles on-chain book state against the engine. | |
-| `packages/onchain` | The `steamline_arena` Anchor program. | 21 (LiteSVM) |
+| `packages/agent` | Devnet runtime. Hand-encodes the instructions it needs straight from the IDL (no Anchor TS client), bootstraps the arena, replays a fixture through the shared `analyzeFixture` pipeline, and reconciles on-chain book state against the engine. | 6 |
+| `packages/onchain` | The `steamline_arena` Anchor program. | 24 (LiteSVM) |
 
-The web app is `dashboard/` (in-browser engine replay of 18 real fixtures) plus `api/run.js` (a serverless executor that runs one canonical on-chain pass per game against a public arena).
+The web app is `dashboard/` (in-browser engine replay of the captured real World Cup fixtures) plus `api/run.js` (a serverless executor that runs one canonical on-chain pass per game against a public arena).
 
 ## Quickstart
 
@@ -43,8 +43,11 @@ node --test --experimental-strip-types "packages/engine/*.test.ts"   # 50 pass
 # Feed: TxLINE client, capture, Merkle validation
 node --test --experimental-strip-types "packages/feed/*.test.ts"     # 31 pass
 
+# Agent: shared analysis pipeline, payout parity, equity conservation
+node --test --experimental-strip-types "packages/agent/*.test.ts"    # 6 pass
+
 # Program: LiteSVM integration tests
-cd packages/onchain && anchor build && cargo test                     # 21 pass
+cd packages/onchain && anchor build && cargo test                     # 24 pass
 ```
 
 Running the agent against devnet needs an RPC endpoint and funded keypairs, neither of which lives in the repo. The reproducible path is the test suites above and the live site, which executes real on-chain runs per game.
@@ -53,7 +56,7 @@ Running the agent against devnet needs an RPC endpoint and funded keypairs, neit
 
 `steamline_arena` (Anchor 1.0). Play-money points only.
 
-Instructions: `initialize_arena`, `register_agent`, `open_match`, `open_position`, `settle_match`, `settle_position`, `void_match`.
+Instructions: `initialize_arena`, `register_agent`, `open_match`, `open_position`, `settle_match`, `settle_match_verified`, `settle_position`, `void_match`.
 
 PDAs:
 
