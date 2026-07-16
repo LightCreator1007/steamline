@@ -4,6 +4,7 @@
 // Keys come from env vars (dedicated web keypairs, never the main deployer).
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 import { outcomeFromScore, resultToOutcomeName } from "../packages/engine/settle.ts";
+import { RPC_DEVNET_DEFAULT } from "../packages/feed/env.ts";
 import { analyzeFixture, type AnalyzedDecision } from "../packages/agent/analyze.ts";
 import {
   arenaPda,
@@ -20,6 +21,9 @@ import {
 } from "../packages/agent/client.ts";
 
 const SEASON = 777n;
+// Fallback for a game without a pinned cal; every runnable game in games.json
+// carries its own, so this is only a safety net.
+const DEMO_CAL = { theta: 0.01, edgeMin: 0.005 };
 
 function envKeypair(name: string): Keypair {
   const raw = process.env[name];
@@ -52,7 +56,7 @@ export default async function handler(req: any, res: any): Promise<void> {
       return;
     }
 
-    const rpc = process.env.RPC_URL ?? "https://api.devnet.solana.com";
+    const rpc = process.env.RPC_URL ?? RPC_DEVNET_DEFAULT;
     const connection = new Connection(rpc, "confirmed");
     const authority = envKeypair("WEB_AUTHORITY_KEYPAIR");
     const follow = envKeypair("WEB_FOLLOW_KEYPAIR");
@@ -66,7 +70,7 @@ export default async function handler(req: any, res: any): Promise<void> {
     const payloads = await fetchJsonl(`${origin}/data/${fixtureId}/odds.jsonl`);
     const scores = await fetchJsonl(`${origin}/data/${fixtureId}/scores.jsonl`);
     const finalScore = scores[0] ?? null;
-    const cal = game.cal ?? { theta: 0.01, edgeMin: 0.005 };
+    const cal = game.cal ?? DEMO_CAL;
     const analysis = analyzeFixture(fixtureId, payloads, finalScore, cal);
     const decisions = analysis.decisions;
     console.log("stage:analysis-ok", decisions.length);

@@ -14,6 +14,7 @@ export interface FeedEnv {
 
 export const TXORACLE_DEVNET = "6pW64gN1s2uqjHkn1unFeEjAwJkPGHoppGvS715wyP2J";
 export const TXORACLE_MAINNET = "9ExbZjAapQww1vfcisDmrngPinHTEfpjYRWMunJgcKaA";
+export const RPC_DEVNET_DEFAULT = "https://api.devnet.solana.com";
 
 export function loadEnv(
   src: Record<string, string | undefined>,
@@ -35,7 +36,7 @@ export function loadEnv(
   }
   const rpcUrl =
     network === "devnet"
-      ? (src.SOLANA_DEVNET_RPC ?? "https://api.devnet.solana.com")
+      ? (src.SOLANA_DEVNET_RPC ?? RPC_DEVNET_DEFAULT)
       : (src.SOLANA_MAINNET_RPC ?? "https://api.mainnet-beta.solana.com");
   const upper = network.toUpperCase();
   return {

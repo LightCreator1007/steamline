@@ -10,6 +10,7 @@ import { defaultConfig, type OddsPayload, type Outcome } from "../engine/model.t
 import { resultToOutcomeName } from "../engine/settle.ts";
 import { standing, renderMarkdown } from "../engine/report.ts";
 import { replaySource } from "../feed/replaySource.ts";
+import { RPC_DEVNET_DEFAULT } from "../feed/env.ts";
 import { analyzeFixture, type AnalyzedDecision } from "./analyze.ts";
 import {
   arenaPda,
@@ -28,7 +29,7 @@ import {
 } from "./client.ts";
 
 const ROOT = new URL("../..", import.meta.url).pathname;
-const RPC = process.env.RPC_URL ?? "https://api.devnet.solana.com";
+const RPC = process.env.RPC_URL ?? RPC_DEVNET_DEFAULT;
 const DRY = process.env.DRY_RUN === "1";
 const TICK_MS = Number(process.env.DEMO_TICK_MS ?? 1200);
 const SEASON_ID = BigInt(process.env.SEASON ?? "2026");
