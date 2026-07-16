@@ -18,3 +18,8 @@ keypairs/
 .vercel/
 .vercel
 .env*
+.playwright-mcp/
+
+# Raw unfiltered capture dumps: the canonicalized odds.jsonl beside them is what
+# the engine reads. Large, regenerable from the historical API.
+fixtures/**/odds-raw.jsonl
