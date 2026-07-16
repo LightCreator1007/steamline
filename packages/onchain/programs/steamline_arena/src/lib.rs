@@ -7,6 +7,7 @@ pub mod merkle;
 pub mod state;
 
 use instructions::*;
+use merkle::ProofNode;
 use state::ROOT_PREFIX_MAX;
 
 declare_id!("E9jfScHBJRB2NyB2NFmE4Kec9D8hJ1X7k24AXufRbX5n");
@@ -87,6 +88,29 @@ pub mod steamline_arena {
             away_score,
             settled_outcome,
             score_proof_ref,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn settle_match_verified(
+        ctx: Context<SettleMatchVerified>,
+        fixture_id: u64,
+        home_score: u16,
+        away_score: u16,
+        settled_outcome: u8,
+        epoch_day: u64,
+        leaf_data: Vec<u8>,
+        proof: Vec<ProofNode>,
+    ) -> Result<()> {
+        instructions::settle_match_verified::handler(
+            ctx,
+            fixture_id,
+            home_score,
+            away_score,
+            settled_outcome,
+            epoch_day,
+            leaf_data,
+            proof,
         )
     }
 
