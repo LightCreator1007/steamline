@@ -52,17 +52,6 @@ export interface Signal {
   method: SteamMethod;
 }
 
-export interface Decision {
-  agentId: AgentId;
-  fixtureId: number;
-  signalSeq: number;
-  outcome: OutcomeName;
-  belief: number;
-  entryOdds: number;
-  edge: number;
-  stakePoints: number;
-}
-
 export interface PositionRecord {
   agentId: AgentId;
   fixtureId: number;
