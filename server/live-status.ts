@@ -4,8 +4,12 @@
 // (packages/agent/live.ts) is trading the match.
 // GET /api/live-status?fixture=<id>
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
+import { defaultConfig, type OddsPayload } from "../packages/engine/model.ts";
+import { normalizeOdds } from "../packages/engine/normalize.ts";
 import { RPC_DEVNET_DEFAULT } from "../packages/feed/env.ts";
+import { makeClient } from "../packages/feed/txlineClient.ts";
 import { arenaPda, bookPda, matchPda, positionPda } from "../packages/agent/client.ts";
+import { canonicalOdds } from "../packages/agent/live.ts";
 
 const SEASON = 777n;
 // ponytail: probe depth 8 signal seqs per book; raise if a match ever fires more
@@ -18,6 +22,38 @@ function envPubkey(name: string): PublicKey {
   const raw = process.env[name];
   if (!raw) throw new Error(`missing env ${name}`);
   return Keypair.fromSecretKey(Uint8Array.from(JSON.parse(raw))).publicKey;
+}
+
+// Live consensus odds from TxLINE, same canonical transform the live driver
+// applies (FT 1X2 consensus line, 60s thinning), so the tiles and sparkline
+// show exactly what the agent sees. Empty when the market has not opened or
+// creds are absent; the panel degrades gracefully either way.
+async function fetchTicks(fixtureId: number): Promise<any[]> {
+  const jwt = process.env.TXLINE_JWT_DEVNET;
+  const apiToken = process.env.TXLINE_API_TOKEN_DEVNET;
+  if (!jwt || !apiToken) return [];
+  try {
+    const client = makeClient({ apiBase: "https://txline-dev.txodds.com", jwt, apiToken, timeoutMs: 6_000, retries: 1 });
+    const raw = await client.oddsSnapshot(fixtureId);
+    const ft = raw
+      .map((p) => canonicalOdds(p as OddsPayload))
+      .filter((p): p is OddsPayload => p !== null)
+      .sort((a, b) => a.Ts - b.Ts);
+    const ticks: any[] = [];
+    let last = 0;
+    for (const p of ft) {
+      if (p.Ts < last + 60_000) continue;
+      last = p.Ts;
+      const t = normalizeOdds({ ...p, FixtureId: fixtureId }, p.Ts, defaultConfig);
+      ticks.push({
+        ts: p.Ts,
+        outcomes: t.outcomes.map((o) => ({ name: o.name, odds: Number(o.decimalOdds.toFixed(3)), prob: Number(o.fairProb.toFixed(4)) })),
+      });
+    }
+    return ticks.slice(-360);
+  } catch {
+    return [];
+  }
 }
 
 export default async function handler(req: any, res: any): Promise<void> {
@@ -37,6 +73,7 @@ export default async function handler(req: any, res: any): Promise<void> {
     const match = matchPda(arena, BigInt(fixtureId));
     const books = [bookPda(arena, follow), bookPda(arena, fade)];
 
+    const ticksPromise = fetchTicks(fixtureId);
     const probes: { agent: number; seq: number; pda: PublicKey }[] = [];
     for (let agent = 0; agent < 2; agent++) {
       for (let seq = 0; seq < MAX_SEQ; seq++) {
@@ -94,6 +131,7 @@ export default async function handler(req: any, res: any): Promise<void> {
       ],
       matchState,
       positions,
+      ticks: await ticksPromise,
     });
   } catch (e) {
     res.status(500).json({ error: e instanceof Error ? e.message : String(e) });

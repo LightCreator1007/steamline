@@ -198,6 +198,9 @@ function settleNow(): void {
 let runState: any = null;
 let apiAvailable = true;
 let liveTimer: number | null = null;
+// Live consensus odds accumulated while the tab is open (server returns the
+// snapshot's recent history; the merge keeps whatever we have seen).
+let liveTape: { ts: number; outcomes: { name: string; odds: number; prob: number }[] }[] = [];
 
 function clearLive(): void {
   if (liveTimer !== null) window.clearInterval(liveTimer);
@@ -214,6 +217,7 @@ async function selectLiveGame(g: Game): Promise<void> {
   payloads = [];
   finalScore = null;
   analysis = null;
+  liveTape = [];
   done = true;
   renderRail();
   $("liveNote").textContent = "";
@@ -245,7 +249,38 @@ async function refreshLive(g: Game): Promise<void> {
     }
   }
   if (game?.id !== g.id) return;
+  if (status?.ticks?.length) {
+    const known = new Set(liveTape.map((t) => t.ts));
+    for (const t of status.ticks) if (!known.has(t.ts)) liveTape.push(t);
+    liveTape.sort((a, b) => a.ts - b.ts);
+  }
+  renderLiveOdds(g);
   renderLivePanel(g, status);
+}
+
+// Tiles + sparkline from the accumulated live consensus line, reusing the
+// replay renderers so live looks exactly like the replays, just unfolding.
+function renderLiveOdds(g: Game): void {
+  const svg = $("tape");
+  if (liveTape.length === 0) {
+    renderBoard(null);
+    svg.setAttribute("viewBox", "0 0 940 150");
+    svg.innerHTML = `<text x="470" y="78" text-anchor="middle" fill="#8b93b8" font-size="13">TxLINE has not opened this market yet. Live consensus odds draw here the moment it does.</text>`;
+    $("legend").innerHTML = "";
+    return;
+  }
+  const last = liveTape[liveTape.length - 1];
+  renderBoard({ outcomes: last.outcomes.map((o) => ({ name: o.name, decimalOdds: o.odds, fairProb: o.prob })) } as OddsTick);
+  if (liveTape.length < 2) {
+    svg.innerHTML = `<text x="470" y="78" text-anchor="middle" fill="#8b93b8" font-size="13">Market open. The line starts drawing on the next refresh.</text>`;
+    return;
+  }
+  const order = ["1", "X", "2"];
+  const series = liveTape.map((t) => ({
+    ts: t.ts,
+    probs: order.map((n) => t.outcomes.find((o) => o.name === n)?.prob ?? 0),
+  }));
+  renderTapeInto(series, [], series[0].ts, series[series.length - 1].ts);
 }
 
 function renderLivePanel(g: Game, status: any): void {
@@ -352,17 +387,20 @@ function renderBooks(books: AgentState[]): void {
 }
 
 function renderTape(): void {
+  if (tape.length < 2) {
+    $("tape").innerHTML = "";
+    return;
+  }
+  renderTapeInto(tape, signalsSeen, payloads[0].Ts, payloads[payloads.length - 1].Ts);
+}
+
+function renderTapeInto(series: { ts: number; probs: number[] }[], signals: Signal[], t0: number, t1: number): void {
   const svg = $("tape");
   const W = 940, H = 150, PAD = 6;
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-  if (tape.length < 2) {
-    svg.innerHTML = "";
-    return;
-  }
-  const t0 = payloads[0].Ts, t1 = payloads[payloads.length - 1].Ts;
   const x = (ts: number) => PAD + ((ts - t0) / (t1 - t0)) * (W - 2 * PAD);
   let lo = 1, hi = 0;
-  for (const p of tape) for (const v of p.probs) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+  for (const p of series) for (const v of p.probs) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
   lo = Math.max(0, lo - 0.015); hi = Math.min(1, hi + 0.015);
   const y = (v: number) => H - PAD - ((v - lo) / (hi - lo)) * (H - 2 * PAD);
   const colors = ["#ffd84d", "#8b93b8", "#7fd4dc"];
@@ -373,12 +411,12 @@ function renderTape(): void {
   }
   let paths = "";
   for (let k = 0; k < 3; k++) {
-    const steamed = signalsSeen.length > 0 && signalsSeen[0].outcome === ["1", "X", "2"][k];
-    const d = tape.map((p, i) => `${i ? "L" : "M"}${x(p.ts).toFixed(1)},${y(p.probs[k]).toFixed(1)}`).join("");
+    const steamed = signals.length > 0 && signals[0].outcome === ["1", "X", "2"][k];
+    const d = series.map((p, i) => `${i ? "L" : "M"}${x(p.ts).toFixed(1)},${y(p.probs[k]).toFixed(1)}`).join("");
     paths += `<path d="${d}" fill="none" stroke="${colors[k]}" stroke-width="${steamed ? 2.4 : 1.1}" opacity="${steamed ? 1 : 0.6}"/>`;
   }
   let marks = "";
-  signalsSeen.forEach((s, n) => {
+  signals.forEach((s, n) => {
     const xx = x(s.ts);
     const flip = xx > W * 0.8;
     marks += `<line x1="${xx}" x2="${xx}" y1="${PAD}" y2="${H - PAD}" stroke="#ff7a5c" stroke-width="1" stroke-dasharray="3 3"/>
