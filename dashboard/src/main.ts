@@ -209,9 +209,28 @@ function calQuery(): string {
   return `&theta=${tPp}&edge=${ePct}`;
 }
 let liveTimer: number | null = null;
-// Live consensus odds accumulated while the tab is open (server returns the
-// snapshot's recent history; the merge keeps whatever we have seen).
+// Live consensus odds accumulated across polls AND page reloads: TxLINE's
+// snapshot only carries the current tick, so history is whatever this browser
+// (localStorage) and the server's warm instance have seen.
 let liveTape: { ts: number; outcomes: { name: string; odds: number; prob: number }[] }[] = [];
+
+const tapeKey = (id: number) => `steamline-livetape-${id}`;
+
+function loadTape(id: number): typeof liveTape {
+  try {
+    return JSON.parse(localStorage.getItem(tapeKey(id)) ?? "[]");
+  } catch {
+    return [];
+  }
+}
+
+function saveTape(id: number): void {
+  try {
+    localStorage.setItem(tapeKey(id), JSON.stringify(liveTape.slice(-360)));
+  } catch {
+    // private mode or quota: in-memory accumulation still works
+  }
+}
 
 function clearLive(): void {
   if (liveTimer !== null) window.clearInterval(liveTimer);
@@ -228,7 +247,7 @@ async function selectLiveGame(g: Game): Promise<void> {
   payloads = [];
   finalScore = null;
   analysis = null;
-  liveTape = [];
+  liveTape = loadTape(g.id);
   done = true;
   renderRail();
   $("liveNote").textContent = "";
@@ -264,6 +283,7 @@ async function refreshLive(g: Game): Promise<void> {
     const known = new Set(liveTape.map((t) => t.ts));
     for (const t of status.ticks) if (!known.has(t.ts)) liveTape.push(t);
     liveTape.sort((a, b) => a.ts - b.ts);
+    saveTape(g.id);
   }
   renderLiveOdds(g);
   renderLivePanel(g, status);
@@ -283,7 +303,7 @@ function renderLiveOdds(g: Game): void {
   const last = liveTape[liveTape.length - 1];
   renderBoard({ outcomes: last.outcomes.map((o) => ({ name: o.name, decimalOdds: o.odds, fairProb: o.prob })) } as OddsTick);
   if (liveTape.length < 2) {
-    svg.innerHTML = `<text x="470" y="78" text-anchor="middle" fill="#8b93b8" font-size="13">Market open. The line starts drawing on the next refresh.</text>`;
+    svg.innerHTML = `<text x="470" y="78" text-anchor="middle" fill="#8b93b8" font-size="13">Market open, first tick captured. This page polls TxLINE once a minute; the chart draws as soon as a second tick lands.</text>`;
     return;
   }
   const order = ["1", "X", "2"];

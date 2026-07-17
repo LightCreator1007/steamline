@@ -26,34 +26,49 @@ function envPubkey(name: string): PublicKey {
 
 // Live consensus odds from TxLINE, same canonical transform the live driver
 // applies (FT 1X2 consensus line, 60s thinning), so the tiles and sparkline
-// show exactly what the agent sees. Empty when the market has not opened or
-// creds are absent; the panel degrades gracefully either way.
+// show exactly what the agent sees. The snapshot endpoint only returns the
+// CURRENT tick, so history accumulates in this warm instance across calls;
+// the browser additionally persists its own copy in localStorage.
+// ponytail: warm-instance memory; a cold start forgets and re-accumulates.
+const tapeCache = new Map<number, any[]>();
+
 async function fetchTicks(fixtureId: number): Promise<any[]> {
   const jwt = process.env.TXLINE_JWT_DEVNET;
   const apiToken = process.env.TXLINE_API_TOKEN_DEVNET;
-  if (!jwt || !apiToken) return [];
-  try {
-    const client = makeClient({ apiBase: "https://txline-dev.txodds.com", jwt, apiToken, timeoutMs: 6_000, retries: 1 });
-    const raw = await client.oddsSnapshot(fixtureId);
-    const ft = raw
-      .map((p) => canonicalOdds(p as OddsPayload))
-      .filter((p): p is OddsPayload => p !== null)
-      .sort((a, b) => a.Ts - b.Ts);
-    const ticks: any[] = [];
-    let last = 0;
-    for (const p of ft) {
-      if (p.Ts < last + 60_000) continue;
-      last = p.Ts;
-      const t = normalizeOdds({ ...p, FixtureId: fixtureId }, p.Ts, defaultConfig);
-      ticks.push({
-        ts: p.Ts,
-        outcomes: t.outcomes.map((o) => ({ name: o.name, odds: Number(o.decimalOdds.toFixed(3)), prob: Number(o.fairProb.toFixed(4)) })),
-      });
+  const fresh: any[] = [];
+  if (jwt && apiToken) {
+    try {
+      const client = makeClient({ apiBase: "https://txline-dev.txodds.com", jwt, apiToken, timeoutMs: 6_000, retries: 1 });
+      const raw = await client.oddsSnapshot(fixtureId);
+      const ft = raw
+        .map((p) => canonicalOdds(p as OddsPayload))
+        .filter((p): p is OddsPayload => p !== null)
+        .sort((a, b) => a.Ts - b.Ts);
+      for (const p of ft) {
+        const t = normalizeOdds({ ...p, FixtureId: fixtureId }, p.Ts, defaultConfig);
+        fresh.push({
+          ts: p.Ts,
+          outcomes: t.outcomes.map((o) => ({ name: o.name, odds: Number(o.decimalOdds.toFixed(3)), prob: Number(o.fairProb.toFixed(4)) })),
+        });
+      }
+    } catch {
+      // transient TxLINE error: fall through and serve the cache
     }
-    return ticks.slice(-360);
-  } catch {
-    return [];
   }
+  const cached = tapeCache.get(fixtureId) ?? [];
+  const known = new Set(cached.map((t) => t.ts));
+  for (const t of fresh) if (!known.has(t.ts)) cached.push(t);
+  cached.sort((a, b) => a.ts - b.ts);
+  // 60s thinning across the merged history, mirroring the live driver
+  const thinned: any[] = [];
+  let last = 0;
+  for (const t of cached) {
+    if (t.ts < last + 60_000) continue;
+    last = t.ts;
+    thinned.push(t);
+  }
+  tapeCache.set(fixtureId, thinned.slice(-360));
+  return tapeCache.get(fixtureId)!;
 }
 
 export default async function handler(req: any, res: any): Promise<void> {
