@@ -12,6 +12,7 @@ interface Game {
   away: string;
   stage: string;
   date: string;
+  kickoff?: string;
   final?: string;
   live?: boolean;
   cal?: { theta: number; edgeMin: number };
@@ -63,10 +64,10 @@ function renderRail(): void {
     }
     const active = game && g.id === game.id ? " active" : "";
     if (g.live) {
-      html += `<button class="gcard live" data-id="${g.id}" aria-disabled="true">
+      html += `<button class="gcard live${active}" data-id="${g.id}">
         <span class="teams">${g.home} vs ${g.away}</span>
         <span class="sub">${g.date}</span>
-        <span class="livechip">LIVE · coming soon</span></button>`;
+        <span class="livechip">LIVE</span></button>`;
     } else {
       html += `<button class="gcard${active}" data-id="${g.id}">
         <span class="teams">${g.home} vs ${g.away}</span>
@@ -80,7 +81,7 @@ function renderRail(): void {
     el.addEventListener("click", () => {
       const g = games.find((x) => x.id === Number(el.dataset.id))!;
       if (g.live) {
-        $("liveNote").textContent = `${g.home} vs ${g.away} kicks off ${g.date}. The agent will watch it live; this page streams it soon after.`;
+        selectLiveGame(g);
         return;
       }
       selectGame(g.id);
@@ -90,6 +91,7 @@ function renderRail(): void {
 
 async function selectGame(id: number): Promise<void> {
   stop();
+  clearLive();
   game = games.find((g) => g.id === id)!;
   const [oddsTxt, scoreTxt] = await Promise.all([
     (await fetch(`./data/${id}/odds.jsonl`)).text(),
@@ -112,6 +114,7 @@ async function selectGame(id: number): Promise<void> {
 }
 
 function resetReplay(): void {
+  if (game?.live) return;
   stop();
   analysis = game ? analyzeFixture(game.id, payloads, finalScore, cal()) : null;
   signalsSeen = [];
@@ -194,6 +197,100 @@ function settleNow(): void {
 
 let runState: any = null;
 let apiAvailable = true;
+let liveTimer: number | null = null;
+
+function clearLive(): void {
+  if (liveTimer !== null) window.clearInterval(liveTimer);
+  liveTimer = null;
+}
+
+// Live view: no replay data exists yet, so everything renders from the
+// chain-only /api/live-status probe, refreshed once a minute while the CLI
+// live driver trades the match on season 777.
+async function selectLiveGame(g: Game): Promise<void> {
+  stop();
+  clearLive();
+  game = g;
+  payloads = [];
+  finalScore = null;
+  analysis = null;
+  done = true;
+  renderRail();
+  $("liveNote").textContent = "";
+  $("feed").innerHTML = "";
+  $("settle").innerHTML = "";
+  $("legend").innerHTML = "";
+  $("tape").innerHTML = "";
+  $("books").innerHTML = "";
+  renderBoard(null);
+  $("matchline").innerHTML = `<span class="label">${g.home} vs ${g.away}</span>
+    <span class="chip">${g.stage}</span><span class="chip">fixture ${g.id}</span>
+    <span class="livechip">LIVE</span>`;
+  updatePlayButton();
+  const tick = () => refreshLive(g);
+  await tick();
+  liveTimer = window.setInterval(tick, 60_000);
+}
+
+async function refreshLive(g: Game): Promise<void> {
+  if (game?.id !== g.id) return;
+  let status: any = null;
+  if (apiAvailable) {
+    try {
+      const res = await fetch(`/api/live-status?fixture=${g.id}`);
+      if (res.ok && res.headers.get("content-type")?.includes("json")) status = await res.json();
+      else if (!res.headers.get("content-type")?.includes("json")) apiAvailable = false;
+    } catch {
+      apiAvailable = false;
+    }
+  }
+  if (game?.id !== g.id) return;
+  renderLivePanel(g, status);
+}
+
+function renderLivePanel(g: Game, status: any): void {
+  const el = $("chain");
+  const kickoff = Date.parse(g.kickoff ?? "");
+  const windowOpen = kickoff - 6 * 3600_000;
+  const now = Date.now();
+  const fmt = (t: number) => new Date(t).toUTCString().slice(0, 22) + " UTC";
+  let phase: string;
+  if (status?.matchState?.status === "settled") {
+    phase = `Full time: ${g.home} ${status.matchState.homeScore}-${status.matchState.awayScore} ${g.away}. ` +
+      `Settled on chain; every row below is a real devnet transaction the agent submitted during the live run.`;
+  } else if (now < windowOpen) {
+    phase = `Steam window opens ${fmt(windowOpen)} (kickoff ${fmt(kickoff)}). The agent starts watching the pre-match line then.`;
+  } else if (now < kickoff) {
+    phase = `The agent is watching the pre-match line right now. Positions appear below the moment steam fires; this page refreshes every minute.`;
+  } else {
+    phase = `Kickoff has passed; detection is pre-match only, so no new positions open. Open positions settle at full time.`;
+  }
+  const head = `<div class="eyebrow">Live · public devnet arena · season 777</div>`;
+  if (!apiAvailable || !status || status.error) {
+    el.innerHTML = `${head}<p class="note">${phase}</p>${apiAvailable ? "" : `<p class="note">On-chain status API not available on this host.</p>`}`;
+    return;
+  }
+  const links = `Arena <a href="${EXPL(status.arena, "address")}" target="_blank" rel="noopener">${status.arena.slice(0, 8)}…</a>
+    · Match <a href="${EXPL(status.match, "address")}" target="_blank" rel="noopener">${status.match.slice(0, 8)}…</a>
+    · Books <a href="${EXPL(status.books[0].address, "address")}" target="_blank" rel="noopener">follow</a> /
+    <a href="${EXPL(status.books[1].address, "address")}" target="_blank" rel="noopener">fade</a>`;
+  const table = status.positions.length
+    ? `<div class="tablewrap"><table><thead><tr><th>agent</th><th>backed</th><th>odds</th><th>stake</th><th>result</th><th>payout</th><th>solana tx</th></tr></thead><tbody>${positionRows(status.positions)}</tbody></table></div>`
+    : `<p class="note">No positions on chain yet.</p>`;
+  el.innerHTML = `${head}<p class="note">${phase} ${links}</p>${table}`;
+}
+
+function positionRows(list: any[]): string {
+  return list
+    .map(
+      (p: any) => `<tr><td class="agent-${p.agent}">${p.agent}</td>
+      <td>${outcomeName(p.outcome)}</td><td class="odds">${p.entryOdds.toFixed(2)}</td>
+      <td>${pts(p.stake)}</td><td><span class="${p.status}">${p.status.toUpperCase()}</span></td>
+      <td>${pts(p.payout)}</td>
+      <td>${p.openTx ? `<a href="${EXPL(p.openTx)}" target="_blank" rel="noopener">open</a>` : "-"}${p.settleTx ? ` · <a href="${EXPL(p.settleTx)}" target="_blank" rel="noopener">settle</a>` : ""}</td></tr>`,
+    )
+    .join("");
+}
 
 async function fetchRunState(): Promise<void> {
   runState = null;
@@ -319,15 +416,7 @@ async function renderChainPanel(): Promise<void> {
     document.getElementById("runbtn")?.addEventListener("click", executeOnChain);
     return;
   }
-  const rows = runState.positions
-    .map(
-      (p: any) => `<tr><td class="agent-${p.agent}">${p.agent}</td>
-      <td>${outcomeName(p.outcome)}</td><td class="odds">${p.entryOdds.toFixed(2)}</td>
-      <td>${pts(p.stake)}</td><td><span class="${p.status}">${p.status.toUpperCase()}</span></td>
-      <td>${pts(p.payout)}</td>
-      <td>${p.openTx ? `<a href="${EXPL(p.openTx)}" target="_blank" rel="noopener">open</a>` : "-"}${p.settleTx ? ` · <a href="${EXPL(p.settleTx)}" target="_blank" rel="noopener">settle</a>` : ""}</td></tr>`,
-    )
-    .join("");
+  const rows = positionRows(runState.positions);
   el.innerHTML = `${head}<p class="note">Executed on the public arena at the pinned calibration
     (${runState.calibration.theta * 100}pp / ${runState.calibration.edgeMin * 100}%). Every row is a real devnet
     transaction. ${links}</p>
@@ -343,7 +432,7 @@ function speedMs(): number {
 }
 
 function play(): void {
-  if (timer !== null || done) return;
+  if (timer !== null || done || game?.live) return;
   timer = window.setInterval(step, speedMs());
   updatePlayButton();
 }
@@ -359,6 +448,7 @@ function updatePlayButton(): void {
 }
 
 function skipToEnd(): void {
+  if (game?.live) return;
   stop();
   while (analysis && idx < analysis.trace.length) step();
   if (!done) settleNow();
