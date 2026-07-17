@@ -21,6 +21,7 @@ const DISC = {
   openMatch: [208, 231, 100, 44, 102, 12, 220, 99],
   openPosition: [135, 128, 47, 77, 15, 152, 240, 49],
   settleMatch: [71, 124, 117, 96, 191, 217, 116, 24],
+  settleMatchVerified: [173, 139, 114, 142, 7, 34, 213, 55],
   settlePosition: [33, 156, 74, 218, 215, 42, 112, 175],
 } as const;
 
@@ -205,6 +206,60 @@ export function settleMatchIx(opts: {
       { pubkey: opts.game, isSigner: false, isWritable: true },
     ],
     data: Buffer.concat([Buffer.from(DISC.settleMatch), u64le(opts.fixtureId), scores, Buffer.from(opts.scoreProofRef)]),
+  });
+}
+
+export interface ProofNodeArg {
+  hash: Uint8Array; // 32 bytes
+  side: 0 | 1; // 0 = sibling on the left, 1 = on the right (merkle.rs)
+}
+
+// Provenance-verified settlement: the program checks hash_leaf(leafData)
+// folded through proof equals the root read from the Txoracle roots account
+// at the arena's configured offset. Note (2026-07-17 probe): TxLINE's devnet
+// validation proofs do not currently fold to any root anchored on devnet, so
+// this path is callable but cannot yet complete against live TxLINE state.
+export function settleMatchVerifiedIx(opts: {
+  authority: PublicKey;
+  arena: PublicKey;
+  game: PublicKey;
+  roots: PublicKey;
+  fixtureId: bigint;
+  homeScore: number;
+  awayScore: number;
+  settledOutcome: number;
+  epochDay: bigint;
+  leafData: Uint8Array;
+  proof: ProofNodeArg[];
+}): TransactionInstruction {
+  const scores = Buffer.alloc(5);
+  scores.writeUInt16LE(opts.homeScore, 0);
+  scores.writeUInt16LE(opts.awayScore, 2);
+  scores.writeUInt8(opts.settledOutcome, 4);
+  const leafLen = Buffer.alloc(4);
+  leafLen.writeUInt32LE(opts.leafData.length);
+  const proofLen = Buffer.alloc(4);
+  proofLen.writeUInt32LE(opts.proof.length);
+  const nodes = opts.proof.map((n) => Buffer.concat([Buffer.from(n.hash), Buffer.from([n.side])]));
+  const data = Buffer.concat([
+    Buffer.from(DISC.settleMatchVerified),
+    u64le(opts.fixtureId),
+    scores,
+    u64le(opts.epochDay),
+    leafLen,
+    Buffer.from(opts.leafData),
+    proofLen,
+    ...nodes,
+  ]);
+  return new TransactionInstruction({
+    programId: PROGRAM_ID,
+    keys: [
+      { pubkey: opts.authority, isSigner: true, isWritable: false },
+      { pubkey: opts.arena, isSigner: false, isWritable: false },
+      { pubkey: opts.game, isSigner: false, isWritable: true },
+      { pubkey: opts.roots, isSigner: false, isWritable: false },
+    ],
+    data,
   });
 }
 
