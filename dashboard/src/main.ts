@@ -197,6 +197,17 @@ function settleNow(): void {
 
 let runState: any = null;
 let apiAvailable = true;
+
+// Slider calibration in raw slider units (pp / %); empty when the sliders sit
+// on the game's pinned calibration, whose canonical run lives on season 777.
+// Any other combination maps to its own calibration-keyed arena server-side.
+function calQuery(): string {
+  if (!game?.cal) return "";
+  const tPp = Number(($("theta") as HTMLInputElement).value);
+  const ePct = Number(($("edge") as HTMLInputElement).value);
+  if (Math.round(tPp * 10) === Math.round(game.cal.theta * 1000) && Math.round(ePct * 10) === Math.round(game.cal.edgeMin * 1000)) return "";
+  return `&theta=${tPp}&edge=${ePct}`;
+}
 let liveTimer: number | null = null;
 // Live consensus odds accumulated while the tab is open (server returns the
 // snapshot's recent history; the merge keeps whatever we have seen).
@@ -331,7 +342,7 @@ async function fetchRunState(): Promise<void> {
   runState = null;
   if (!apiAvailable || !game) return;
   try {
-    const res = await fetch(`/api/run?fixture=${game.id}`);
+    const res = await fetch(`/api/run?fixture=${game.id}${calQuery()}`);
     if (res.status === 404 && !res.headers.get("content-type")?.includes("json")) {
       apiAvailable = false; // local static server without functions
       return;
@@ -350,7 +361,7 @@ async function executeOnChain(): Promise<void> {
     btn.textContent = "submitting devnet transactions... (up to a minute)";
   }
   try {
-    const res = await fetch(`/api/run?fixture=${game.id}`, { method: "POST" });
+    const res = await fetch(`/api/run?fixture=${game.id}${calQuery()}`, { method: "POST" });
     runState = await res.json();
   } catch {
     if (btn) btn.textContent = "execution failed, try again";
@@ -435,18 +446,27 @@ async function renderChainPanel(): Promise<void> {
     el.innerHTML = apiAvailable ? "" : `<p class="note">On-chain execution API not available on this host.</p>`;
     return;
   }
-  const head = `<div class="eyebrow">Public devnet arena · season ${runState.season}</div>`;
+  const calPp = runState.calibration ? `${(runState.calibration.theta * 100).toFixed(1)}pp / ${(runState.calibration.edgeMin * 100).toFixed(1)}%` : "";
+  const head = runState.calKeyed
+    ? `<div class="eyebrow">Calibration arena · season ${runState.season} · ${calPp}</div>`
+    : `<div class="eyebrow">Public devnet arena · season ${runState.season}</div>`;
   const links = `Arena <a href="${EXPL(runState.arena, "address")}" target="_blank" rel="noopener">${runState.arena.slice(0, 8)}…</a>
     · Match <a href="${EXPL(runState.match, "address")}" target="_blank" rel="noopener">${runState.match.slice(0, 8)}…</a>
     · Books <a href="${EXPL(runState.books[0].address, "address")}" target="_blank" rel="noopener">follow</a> /
     <a href="${EXPL(runState.books[1].address, "address")}" target="_blank" rel="noopener">fade</a>`;
   if (runState.noSteam) {
-    el.innerHTML = `${head}<p class="note">At the pinned calibration this game produces no signals, so there is
-      nothing to trade on-chain. ${links}</p>`;
+    el.innerHTML = `${head}<p class="note">At ${runState.calKeyed ? "this calibration" : "the pinned calibration"} this game produces no signals, so there is
+      nothing to trade on-chain. ${runState.calKeyed ? "Move the sliders to a twitchier setting and this panel follows." : ""} ${links}</p>`;
     return;
   }
   if (!runState.ran) {
-    el.innerHTML = `${head}<p class="note">This game has not been executed on the public arena yet. Anyone can
+    el.innerHTML = runState.calKeyed
+      ? `${head}<p class="note">These exact slider settings (${calPp}) map to their own arena on chain, and nobody has
+      executed this combination yet. The button creates the arena and runs both agents at your settings, for real, on
+      devnet. Anyone else choosing the same settings lands in the same arena and sees this same run: identical inputs,
+      identical result, provable on chain. ${links}</p>
+      <button id="runbtn" class="runbtn">Run this calibration on the devnet arena</button>`
+      : `${head}<p class="note">This game has not been executed on the public arena yet. Anyone can
       trigger its one canonical run (pinned calibration: ${runState.calibration.theta * 100}pp threshold,
       ${runState.calibration.edgeMin * 100}% edge floor). The button submits real devnet transactions signed by
       the arena's server-held keys. ${links}</p>
@@ -455,9 +475,12 @@ async function renderChainPanel(): Promise<void> {
     return;
   }
   const rows = positionRows(runState.positions);
-  el.innerHTML = `${head}<p class="note">Executed on the public arena at the pinned calibration
+  el.innerHTML = `${head}<p class="note">${runState.calKeyed
+    ? `Executed at this calibration (${calPp}). Every visitor who picks these settings lands in this same arena and
+    sees this same run; that is the engine's determinism, visible on chain. Every row is a real devnet transaction.`
+    : `Executed on the public arena at the pinned calibration
     (${runState.calibration.theta * 100}pp / ${runState.calibration.edgeMin * 100}%). Every row is a real devnet
-    transaction. ${links}</p>
+    transaction.`} ${links}</p>
     <div class="tablewrap"><table><thead><tr><th>agent</th><th>backed</th><th>odds</th><th>stake</th><th>result</th><th>payout</th><th>solana tx</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
