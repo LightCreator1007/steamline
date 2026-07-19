@@ -279,6 +279,10 @@
     "stage": "Final",
     "date": "Jul 19",
     "kickoff": "2026-07-19T19:00:00Z",
-    "live": true
+    "final": "0-0",
+    "cal": {
+      "theta": 0.003,
+      "edgeMin": 0.003
+    }
   }
 ]
