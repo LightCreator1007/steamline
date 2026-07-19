@@ -49,12 +49,17 @@ export default function ChainPanel({ game, thetaPp, edgePct }: { game: Game; the
     refetchInterval: 60_000,
     enabled: game.live === true,
   });
-  const liveError = asApiError(live.error);
+  const liveError = game.live === true ? asApiError(live.error) : null;
 
   const run = useMutation({
     mutationFn: () => postRun(url),
     onSuccess: (data: RunStatus) => qc.setQueryData(["run", url], data),
   });
+
+  // A fixture that just left its live window still has the live query's last
+  // answer in the client cache; a disabled query serves cached data, so the
+  // live surfaces are gated on the flag, not on data presence.
+  const isLive = game.live === true;
 
   const error = asApiError(query.error) ?? asApiError(run.error);
   useTransientErrorToast(error && tierOf(error.code) === "toast" ? error : null, query.isFetching || query.failureCount > 0);
@@ -76,8 +81,8 @@ export default function ChainPanel({ game, thetaPp, edgePct }: { game: Game; the
         <Freshness at={query.data?.fetchedAt ?? null} stale={query.isStale} loading={query.isFetching} />
       </header>
 
-      {live.data && <LiveStrip status={live.data} labels={[game.home, "Draw", game.away]} />}
-      {!live.data && live.isLoading && (
+      {isLive && live.data && <LiveStrip status={live.data} labels={[game.home, "Draw", game.away]} />}
+      {isLive && !live.data && live.isLoading && (
         <InlineNotice>Reading live status from devnet and the tick store.</InlineNotice>
       )}
 

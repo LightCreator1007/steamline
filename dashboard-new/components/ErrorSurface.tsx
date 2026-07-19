@@ -42,8 +42,8 @@ function Shell({
   return (
     <AlertDialog.Root open={open} onOpenChange={onOpenChange}>
       <AlertDialog.Portal>
-        <AlertDialog.Overlay className="fixed inset-0 bg-black/70" />
-        <AlertDialog.Content className="fixed left-1/2 top-1/2 w-[min(30rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-line-2 bg-surface p-5 shadow-2xl">
+        <AlertDialog.Overlay className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm" />
+        <AlertDialog.Content className="fixed left-1/2 top-1/2 z-50 w-[min(30rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-line-2 bg-surface p-5 shadow-2xl">
           <AlertDialog.Title className="font-display text-base font-semibold text-fg">{title}</AlertDialog.Title>
           <div className="mt-2 space-y-2 text-xs text-mute">{children}</div>
           <div className="mt-4 flex justify-end gap-2 text-xs">{actions}</div>
@@ -86,8 +86,7 @@ export function ConfirmRunDialog({
     >
       <p>
         This creates arena <span className="num">{season}</span> if it does not exist and submits roughly{" "}
-        <span className="num">{txCount}</span>
-        {" devnet transactions"} signed by the arena&apos;s server-held keys.
+        <span className="num">{txCount}</span> devnet transactions signed by the arena&apos;s server-held keys.
       </p>
       <p>It runs once per calibration, for everyone, forever. Anyone choosing these settings later sees this same run.</p>
     </Shell>
