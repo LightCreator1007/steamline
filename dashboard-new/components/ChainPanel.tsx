@@ -65,10 +65,10 @@ export default function ChainPanel({ game, thetaPp, edgePct }: { game: Game; the
 
   return (
     <section className="space-y-3">
-      <header className="flex flex-wrap items-baseline gap-x-3 border-b border-navy-800 pb-2">
-        <h2 className="text-[11px] uppercase tracking-wider text-ink-500">On-chain</h2>
+      <header className="flex flex-wrap items-baseline gap-x-3 border-b border-line pb-2">
+        <h2 className="text-[11px] uppercase tracking-wider text-mute">On-chain</h2>
         {query.data && (
-          <span className="num text-[11px] text-ink-500">
+          <span className="num text-[11px] text-mute">
             {query.data.calKeyed ? "calibration arena" : "public devnet arena"} · season {query.data.season} ·{" "}
             {pp(query.data.calibration.theta)}pp / {pp(query.data.calibration.edgeMin)}%
           </span>
@@ -92,20 +92,20 @@ export default function ChainPanel({ game, thetaPp, edgePct }: { game: Game; the
       {query.data && <Body status={query.data} game={game} onRun={() => setConfirming(true)} running={run.isPending} />}
 
       {query.data && (
-        <p className="num text-[11px] text-ink-500">
+        <p className="num text-[11px] text-mute">
           Arena{" "}
-          <a className="text-gold-400 hover:underline" href={ADDR(query.data.arena)} target="_blank" rel="noopener">
+          <a className="text-accent hover:underline" href={ADDR(query.data.arena)} target="_blank" rel="noopener">
             {query.data.arena.slice(0, 8)}
           </a>{" "}
           · Match{" "}
-          <a className="text-gold-400 hover:underline" href={ADDR(query.data.match)} target="_blank" rel="noopener">
+          <a className="text-accent hover:underline" href={ADDR(query.data.match)} target="_blank" rel="noopener">
             {query.data.match.slice(0, 8)}
           </a>{" "}
           · Books{" "}
           {query.data.books.map((b, i) => (
             <span key={b.agent}>
               {i > 0 && " / "}
-              <a className="text-gold-400 hover:underline" href={ADDR(b.address)} target="_blank" rel="noopener">
+              <a className="text-accent hover:underline" href={ADDR(b.address)} target="_blank" rel="noopener">
                 {b.agent}
               </a>
             </span>
@@ -177,7 +177,7 @@ function Body({
         <button
           onClick={onRun}
           disabled={running}
-          className="rounded border border-gold-400/60 px-3 py-1.5 text-xs text-gold-400 hover:bg-gold-400/10 disabled:opacity-50"
+          className="rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-accent-2 disabled:opacity-50 dark:text-[#1a1005]"
         >
           {running ? "submitting devnet transactions, up to a minute" : `Run this ${status.calKeyed ? "calibration" : "game"} on the devnet arena`}
         </button>
@@ -187,13 +187,13 @@ function Body({
 
   return (
     <div className="space-y-2">
-      <p className="text-[11px] text-ink-500">
+      <p className="text-[11px] text-mute">
         Executed at {status.calKeyed ? "this calibration" : "the pinned calibration"} (<span className="num">{cal}</span>
         ). Every row is a real devnet transaction; open a receipt for the odds message it was taken from.
       </p>
       <div className="hidden overflow-x-auto sm:block">
         <table className="num w-full min-w-125 text-sm">
-          <thead className="text-left text-ink-500">
+          <thead className="text-left text-mute">
             <tr>
               <th className="py-1 font-normal">agent</th>
               <th className="font-normal">backed</th>
@@ -231,7 +231,7 @@ function Freshness({ at, stale, loading }: { at: number | null; stale: boolean; 
   const secs = Math.max(0, Math.round((Date.now() - at) / 1000));
   const label = secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
   return (
-    <span className={`num ml-auto text-[11px] ${stale ? "text-[#e0a13a]" : "text-ink-500"}`}>
+    <span className={`num ml-auto text-[11px] ${stale ? "text-warn" : "text-mute"}`}>
       {loading ? "reading chain" : `last read ${label} ago`}
     </span>
   );
@@ -240,10 +240,10 @@ function Freshness({ at, stale, loading }: { at: number | null; stale: boolean; 
 /** M4 live view: status strip + phase strip, reconstructed each poll from chain PDAs and the tick store. */
 function LiveStrip({ status, labels }: { status: LiveStatus; labels: string[] }) {
   return (
-    <div className="space-y-2 rounded border border-navy-800 bg-navy-900 p-3">
-      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-[11px] text-ink-500">
+    <div className="space-y-2 rounded-lg border border-line bg-surface p-3">
+      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-[11px] text-mute">
         <span>
-          season <span className="num text-gold-400">{status.season}</span>
+          season <span className="num text-accent">{status.season}</span>
         </span>
         <span>
           match <span className="num">{status.matchState.status}</span>
@@ -256,8 +256,8 @@ function LiveStrip({ status, labels }: { status: LiveStatus; labels: string[] })
         </span>
         <TickFreshness lastTickMs={status.lastTickMs} />
       </div>
-      <p className="text-[11px] text-ink-500">
-        Now: <span className="text-gold-400">{activeLabel(status.phase)}</span>
+      <p className="text-[11px] text-mute">
+        Now: <span className="text-accent">{activeLabel(status.phase)}</span>
         {activeLabel(status.phase) === "not yet open" &&
           " · the window opens automatically a few hours before kickoff; this strip updates the moment ingestion starts."}
       </p>
@@ -286,9 +286,9 @@ function LiveStrip({ status, labels }: { status: LiveStatus; labels: string[] })
 function LivePositions({ positions }: { positions: LiveStatus["positions"] }) {
   if (positions.length === 0) return null;
   return (
-    <div className="overflow-x-auto border-t border-navy-800 pt-2">
+    <div className="overflow-x-auto border-t border-line pt-2">
       <table className="num w-full min-w-100 text-xs">
-        <thead className="text-left text-ink-500">
+        <thead className="text-left text-mute">
           <tr>
             <th className="py-1 font-normal">agent</th>
             <th className="font-normal">backed</th>
@@ -301,7 +301,7 @@ function LivePositions({ positions }: { positions: LiveStatus["positions"] }) {
         </thead>
         <tbody>
           {positions.map((p) => (
-            <tr key={`${p.agent}-${p.signalSeq}`} className="border-t border-navy-800">
+            <tr key={`${p.agent}-${p.signalSeq}`} className="border-t border-line">
               <td className="py-1">{p.agent}</td>
               <td>{p.outcome}</td>
               <td className="text-right">{p.entryOdds.toFixed(2)}</td>
@@ -313,7 +313,7 @@ function LivePositions({ positions }: { positions: LiveStatus["positions"] }) {
               <td className="text-right">
                 {p.settleTx || p.openTx ? (
                   <a
-                    className="text-gold-400 hover:underline"
+                    className="text-accent hover:underline"
                     href={`https://explorer.solana.com/tx/${p.settleTx ?? p.openTx}?cluster=devnet`}
                     target="_blank"
                     rel="noopener"
@@ -321,7 +321,7 @@ function LivePositions({ positions }: { positions: LiveStatus["positions"] }) {
                     view
                   </a>
                 ) : (
-                  <span className="text-ink-500">lookup unavailable</span>
+                  <span className="text-mute">lookup unavailable</span>
                 )}
               </td>
             </tr>
@@ -340,14 +340,14 @@ function PhaseStrip({ phase }: { phase: PhaseStep[] }) {
     <ol className="num flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px]">
       {phase.map((step, i) => (
         <li key={step.id} className="flex items-center gap-1.5">
-          {i > 0 && <span className="text-ink-500/40">{"->"}</span>}
-          <span className={step.active ? "rounded border border-gold-400/60 px-1.5 py-0.5 text-gold-400" : step.done ? "text-ink-500" : "text-ink-500/40"}>
+          {i > 0 && <span className="text-faint/70">{"->"}</span>}
+          <span className={step.active ? "rounded-md border border-accent/60 px-1.5 py-0.5 text-accent" : step.done ? "text-mute" : "text-faint/70"}>
             {step.label}
           </span>
-          {step.at !== null && <span className="text-ink-500/70">{clock(step.at)}</span>}
+          {step.at !== null && <span className="text-faint">{clock(step.at)}</span>}
         </li>
       ))}
-      <li className="text-ink-500/40">UTC</li>
+      <li className="text-faint/70">UTC</li>
     </ol>
   );
 }
@@ -359,7 +359,7 @@ function TickFreshness({ lastTickMs }: { lastTickMs: number | null }) {
     return () => clearInterval(t);
   }, []);
   if (lastTickMs === null) {
-    return <span className="ml-auto text-ink-500">no ticks stored yet, ingestion starts once the window opens</span>;
+    return <span className="ml-auto text-mute">no ticks stored yet, ingestion starts once the window opens</span>;
   }
   const secs = Math.max(0, Math.round((Date.now() - lastTickMs) / 1000));
   // Past an hour, mm:ss stops reading as a duration ("835:18 ago" is noise).
@@ -373,7 +373,7 @@ function TickFreshness({ lastTickMs }: { lastTickMs: number | null }) {
           : `${Math.floor(secs / 86_400)}d ${Math.floor((secs % 86_400) / 3600)}h`;
   const stale = secs > 180;
   return (
-    <span className={`num ml-auto ${stale ? "text-[#e0a13a]" : "text-ink-500"}`}>
+    <span className={`num ml-auto ${stale ? "text-warn" : "text-mute"}`}>
       last tick {label} ago
       {stale && " · cron may be paused, or the match has not reached its ingestion window yet"}
     </span>

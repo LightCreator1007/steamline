@@ -14,29 +14,31 @@ export default function Rail({ games, activeId }: { games: Game[]; activeId: num
 
   return (
     <>
-      {/* Desktop: vertical rail, grouped by stage. */}
-      <nav className="hidden w-60 shrink-0 lg:block">
+      {/* Desktop: vertical rail, grouped by stage, pinned below the site nav. */}
+      <nav className="hidden w-60 shrink-0 lg:sticky lg:top-[72px] lg:block lg:max-h-[calc(100dvh-5.5rem)] lg:self-start lg:overflow-y-auto lg:pr-1">
         {stages.map((s) => (
           <section key={s.stage} className="mb-5">
-            <h2 className="mb-2 text-[11px] uppercase tracking-wider text-ink-500">{s.stage}</h2>
+            <h2 className="mb-2 text-[11px] uppercase tracking-wider text-mute">{s.stage}</h2>
             <ul className="space-y-1">
               {s.games.map((g) => (
                 <li key={g.id}>
                   <Link
                     href={`/f/${g.id}`}
-                    className={`block rounded border px-2 py-1.5 text-sm transition-colors ${
+                    aria-current={g.id === activeId ? "page" : undefined}
+                    className={`block rounded-md border px-2.5 py-1.5 text-sm transition-colors ${
                       g.id === activeId
-                        ? "border-gold-400/60 bg-navy-800 text-gold-400"
-                        : "border-navy-800 bg-navy-900 hover:border-navy-700"
+                        ? "border-accent/50 bg-raised text-fg"
+                        : "border-line bg-surface text-mute hover:border-line-2 hover:text-fg"
                     }`}
                   >
-                    <span className="block truncate">
+                    <span className="block truncate font-medium">
                       {g.home} vs {g.away}
                     </span>
-                    <span className="num block text-[11px] text-ink-500">
+                    <span className="num block text-[11px] text-mute">
                       {g.date}
                       {g.final ? ` · FT ${g.final}` : ""}
-                      {g.live ? " · LIVE" : ""}
+                      {g.live ? " · " : ""}
+                      {g.live ? <span className="font-semibold text-won">LIVE</span> : null}
                     </span>
                   </Link>
                 </li>
@@ -51,7 +53,7 @@ export default function Rail({ games, activeId }: { games: Game[]; activeId: num
       <nav className="-mx-4 lg:hidden">
         {stages.map((s) => (
           <div key={s.stage}>
-            <h2 className="sticky top-0 z-10 bg-navy-950 px-4 py-1.5 text-[11px] uppercase tracking-wider text-ink-500">
+            <h2 className="sticky top-14 z-10 bg-bg px-4 py-1.5 text-[11px] uppercase tracking-wider text-mute">
               {s.stage}
             </h2>
             <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-3">
@@ -59,16 +61,17 @@ export default function Rail({ games, activeId }: { games: Game[]; activeId: num
                 <Link
                   key={g.id}
                   href={`/f/${g.id}`}
-                  className={`block w-[85vw] max-w-sm shrink-0 snap-center rounded border px-3 py-2 text-sm transition-colors ${
+                  aria-current={g.id === activeId ? "page" : undefined}
+                  className={`block w-[85vw] max-w-sm shrink-0 snap-center rounded-md border px-3 py-2 text-sm transition-colors ${
                     g.id === activeId
-                      ? "border-gold-400/60 bg-navy-800 text-gold-400"
-                      : "border-navy-800 bg-navy-900"
+                      ? "border-accent/50 bg-raised text-fg"
+                      : "border-line bg-surface text-mute"
                   }`}
                 >
                   <span className="block truncate">
                     {g.home} vs {g.away}
                   </span>
-                  <span className="num block text-[11px] text-ink-500">
+                  <span className="num block text-[11px] text-mute">
                     {g.date}
                     {g.final ? ` · FT ${g.final}` : ""}
                     {g.live ? " · LIVE" : ""}

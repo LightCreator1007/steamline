@@ -1,28 +1,115 @@
 @import "tailwindcss";
 
-/* Identity carried over from the shipped dashboard: gold on dark navy, one
-   accent, semantic green/red reserved for won/lost and pnl only. */
-@theme {
-  --color-navy-950: #080d1a;
-  --color-navy-900: #0d1426;
-  --color-navy-800: #141d33;
-  --color-navy-700: #1d2842;
-  --color-ink-500: #7b88a8;
-  --color-ink-300: #b6c0d8;
-  --color-gold-400: #ffd84d;
-  --color-won: #35d07f;
-  --color-lost: #ff6b6b;
-  --font-mono: ui-monospace, "JetBrains Mono", "Geist Mono", monospace;
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Steamline tokens. Warm graphite dark (default) and warm paper light.
+   One ember accent, reserved for steam signals and primary actions;
+   green/red appear only on won/lost outcomes. Chart hues are their own
+   tier so the canvas chart can read them at runtime. */
+:root {
+  color-scheme: light;
+  --bg: #f7f6f3;
+  --surface: #fffefc;
+  --raised: #f0eee9;
+  --line: #e6e2da;
+  --line-2: #d3ccc1;
+  --fg: #23201c;
+  --mute: #6b655d;
+  --faint: #9b948b;
+  --accent: #bc5418;
+  --accent-2: #a34612;
+  --won: #1e9e62;
+  --lost: #cc3d47;
+  --warn: #a87619;
+  --chart-home: #33302b;
+  --chart-draw: #a39b90;
+  --chart-away: #2e7f79;
+  --chart-label: #6b655d;
+  --chart-grid: #e6e2da;
+  --chart-tip: #fffefc;
+}
+
+.dark {
+  color-scheme: dark;
+  --bg: #121110;
+  --surface: #1a1816;
+  --raised: #232019;
+  --line: #2c2823;
+  --line-2: #3c362f;
+  --fg: #ede8e1;
+  --mute: #a29a8f;
+  --faint: #6e6860;
+  --accent: #ee7433;
+  --accent-2: #ff8a4d;
+  --won: #4cc38a;
+  --lost: #e5646e;
+  --warn: #d9a036;
+  --chart-home: #ede8e1;
+  --chart-draw: #7d766c;
+  --chart-away: #5ea8a2;
+  --chart-label: #a29a8f;
+  --chart-grid: #26221e;
+  --chart-tip: #232019;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-line: var(--line);
+  --color-line-2: var(--line-2);
+  --color-fg: var(--fg);
+  --color-mute: var(--mute);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
+  --color-won: var(--won);
+  --color-lost: var(--lost);
+  --color-warn: var(--warn);
+  --font-sans: var(--font-sans-src), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-display-src), var(--font-sans-src), sans-serif;
+  --font-mono: var(--font-mono-src), ui-monospace, "JetBrains Mono", monospace;
 }
 
 body {
-  background: var(--color-navy-950);
-  color: var(--color-ink-300);
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
   font-feature-settings: "tnum" 1;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* Every comparable number is tabular; spec section 2. */
 .num {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+}
+
+input[type="range"] {
+  accent-color: var(--accent);
+}
+
+/* Graph-paper backdrop for the hero, fading out toward the fold. */
+.dotgrid {
+  background-image: radial-gradient(color-mix(in srgb, var(--fg) 14%, transparent) 1px, transparent 1px);
+  background-size: 26px 26px;
+  mask-image: linear-gradient(to bottom, black 0%, transparent 78%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

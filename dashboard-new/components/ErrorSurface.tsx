@@ -23,7 +23,7 @@ export function useTransientErrorToast(error: ApiError | null, isRetrying: boole
 
 /** Inline tier: expected conditions rendered as content, not as failure. */
 export function InlineNotice({ children }: { children: React.ReactNode }) {
-  return <p className="rounded border border-navy-800 bg-navy-900 p-3 text-xs text-ink-500">{children}</p>;
+  return <p className="rounded-md border border-line bg-surface p-3 text-xs text-mute">{children}</p>;
 }
 
 function Shell({
@@ -43,9 +43,9 @@ function Shell({
     <AlertDialog.Root open={open} onOpenChange={onOpenChange}>
       <AlertDialog.Portal>
         <AlertDialog.Overlay className="fixed inset-0 bg-black/70" />
-        <AlertDialog.Content className="fixed left-1/2 top-1/2 w-[min(30rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded border border-navy-700 bg-navy-900 p-4 shadow-xl">
-          <AlertDialog.Title className="text-sm font-semibold text-gold-400">{title}</AlertDialog.Title>
-          <div className="mt-2 space-y-2 text-xs text-ink-500">{children}</div>
+        <AlertDialog.Content className="fixed left-1/2 top-1/2 w-[min(30rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-line-2 bg-surface p-5 shadow-2xl">
+          <AlertDialog.Title className="font-display text-base font-semibold text-fg">{title}</AlertDialog.Title>
+          <div className="mt-2 space-y-2 text-xs text-mute">{children}</div>
           <div className="mt-4 flex justify-end gap-2 text-xs">{actions}</div>
         </AlertDialog.Content>
       </AlertDialog.Portal>
@@ -53,8 +53,8 @@ function Shell({
   );
 }
 
-const btn = "rounded border border-navy-700 px-3 py-1.5 hover:border-gold-400/60";
-const btnPrimary = "rounded border border-gold-400/60 px-3 py-1.5 text-gold-400 hover:bg-gold-400/10";
+const btn = "rounded-md border border-line-2 px-3 py-1.5 text-mute transition-colors hover:border-accent/60 hover:text-fg";
+const btnPrimary = "rounded-md bg-accent px-3 py-1.5 font-semibold text-white transition-colors hover:bg-accent-2 dark:text-[#1a1005]";
 
 /** Dialog tier (a): the run is irreversible and shared, so it is confirmed. */
 export function ConfirmRunDialog({
@@ -138,7 +138,7 @@ export function PartialRunDialog({ error, onOpenChange }: { error: ApiError | nu
         {(error?.landed ?? []).map((t) => (
           <li key={t.signature} className="flex justify-between gap-3">
             <span>{t.label}</span>
-            <a className="num text-gold-400 hover:underline" href={EXPLORER_TX(t.signature)} target="_blank" rel="noopener">
+            <a className="num text-accent hover:underline" href={EXPLORER_TX(t.signature)} target="_blank" rel="noopener">
               {t.signature.slice(0, 8)}
             </a>
           </li>

@@ -43,7 +43,7 @@ export default function Knobs({
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded border border-navy-800 bg-navy-900 p-3">
+    <div className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-lg border border-line bg-surface p-3">
       <Slider
         label="steam threshold"
         value={t}
@@ -55,15 +55,15 @@ export default function Knobs({
       <Slider label="edge floor" value={e} unit="%" range={EDGE_RANGE} onInput={setE} onCommit={(v) => commit(t, v)} />
       <div className="num flex w-full flex-wrap items-center gap-2 text-xs sm:ml-auto sm:w-auto sm:flex-nowrap">
         <span
-          className="rounded border border-navy-700 px-2 py-1 text-ink-300"
+          className="rounded-md border border-line-2 px-2 py-1 text-fg"
           title="Identical settings land every visitor in the same on-chain arena."
         >
           {t.toFixed(1)}pp / {e.toFixed(1)}% = arena {atPinned ? "777 (pinned)" : season}
         </span>
-        <button onClick={copyLink} className="rounded border border-navy-700 px-2 py-1 hover:border-gold-400/60">
+        <button onClick={copyLink} className="rounded-md border border-line-2 px-2 py-1 hover:border-accent/60">
           {copied ? "copied" : "copy link"}
         </button>
-        <span className={pending ? "text-gold-400" : "invisible"}>re-analyzing</span>
+        <span className={pending ? "text-accent" : "invisible"}>re-analyzing</span>
       </div>
     </div>
   );
@@ -87,12 +87,12 @@ function Slider({
   const [dragging, setDragging] = useState(false);
   const pct = ((value - range.min) / (range.max - range.min)) * 100;
   return (
-    <label className="flex w-full items-center gap-2 text-xs text-ink-500 sm:w-auto">
+    <label className="flex w-full items-center gap-2 text-xs text-mute sm:w-auto">
       <span className="w-24 shrink-0 sm:w-28">{label}</span>
       <span className="relative flex h-11 flex-1 items-center sm:w-40 sm:flex-none">
         {dragging && (
           <span
-            className="num pointer-events-none absolute -top-6 -translate-x-1/2 rounded border border-gold-400/60 bg-navy-800 px-1.5 py-0.5 text-[11px] text-gold-400"
+            className="num pointer-events-none absolute -top-6 -translate-x-1/2 rounded-md border border-accent/60 bg-raised px-1.5 py-0.5 text-[11px] text-accent"
             style={{ left: `${pct}%` }}
           >
             {value.toFixed(1)}
@@ -117,10 +117,10 @@ function Slider({
             onCommit(Number((ev.target as HTMLInputElement).value));
           }}
           onBlur={() => setDragging(false)}
-          className="h-11 w-full accent-gold-400"
+          className="h-11 w-full"
         />
       </span>
-      <span className="num w-12 shrink-0 text-gold-400">
+      <span className="num w-12 shrink-0 text-accent">
         {value.toFixed(1)}
         {unit}
       </span>

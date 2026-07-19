@@ -15,7 +15,7 @@ export default function ReceiptRow({ p, outcomeName }: { p: Position; outcomeNam
   const tone = p.status === "won" ? "text-won" : p.status === "lost" ? "text-lost" : "";
   return (
     <>
-      <tr className="border-t border-navy-800">
+      <tr className="border-t border-line">
         <td className="py-1">{p.agent}</td>
         <td>{outcomeName(p.outcome)}</td>
         <td className="text-right">{p.entryOdds.toFixed(2)}</td>
@@ -26,15 +26,15 @@ export default function ReceiptRow({ p, outcomeName }: { p: Position; outcomeNam
           <button
             onClick={() => setOpen(!open)}
             aria-expanded={open}
-            className="rounded border border-navy-700 px-2 py-0.5 text-[11px] hover:border-gold-400/60"
+            className="rounded-md border border-line-2 px-2 py-0.5 text-[11px] hover:border-accent/60"
           >
             receipt
           </button>
         </td>
       </tr>
       {open && (
-        <tr className="border-t border-navy-800/60 bg-navy-900/60">
-          <td colSpan={7} className="px-2 py-2 text-[11px] text-ink-500">
+        <tr className="border-t border-line/60 bg-surface/60">
+          <td colSpan={7} className="px-2 py-2 text-[11px] text-mute">
             <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
               <Field label="signal seq" value={String(p.signalSeq)} />
               <Field label="odds ref" value={p.oddsRef} />
@@ -42,7 +42,7 @@ export default function ReceiptRow({ p, outcomeName }: { p: Position; outcomeNam
               <Field
                 label="position"
                 value={
-                  <a className="text-gold-400 hover:underline" href={ADDR(p.address)} target="_blank" rel="noopener">
+                  <a className="text-accent hover:underline" href={ADDR(p.address)} target="_blank" rel="noopener">
                     {p.address.slice(0, 12)}
                   </a>
                 }
@@ -51,7 +51,7 @@ export default function ReceiptRow({ p, outcomeName }: { p: Position; outcomeNam
                 label="open tx"
                 value={
                   p.openTx ? (
-                    <a className="text-gold-400 hover:underline" href={TX(p.openTx)} target="_blank" rel="noopener">
+                    <a className="text-accent hover:underline" href={TX(p.openTx)} target="_blank" rel="noopener">
                       {p.openTx.slice(0, 12)}
                     </a>
                   ) : p.onChain ? (
@@ -65,7 +65,7 @@ export default function ReceiptRow({ p, outcomeName }: { p: Position; outcomeNam
                 label="settle tx"
                 value={
                   p.settleTx ? (
-                    <a className="text-gold-400 hover:underline" href={TX(p.settleTx)} target="_blank" rel="noopener">
+                    <a className="text-accent hover:underline" href={TX(p.settleTx)} target="_blank" rel="noopener">
                       {p.settleTx.slice(0, 12)}
                     </a>
                   ) : (
@@ -95,14 +95,14 @@ export function PositionCard({ p, outcomeName }: { p: Position; outcomeName: (o:
   const [open, setOpen] = useState(false);
   const tone = p.status === "won" ? "text-won" : p.status === "lost" ? "text-lost" : "";
   return (
-    <div className="rounded border border-navy-800 bg-navy-900 p-2 text-xs">
-      <div className="num flex items-center justify-between text-ink-300">
+    <div className="rounded-md border border-line bg-surface p-2 text-xs">
+      <div className="num flex items-center justify-between text-fg">
         <span className="truncate">
           {p.agent} · {outcomeName(p.outcome)}
         </span>
         <span>{p.entryOdds.toFixed(2)}</span>
       </div>
-      <div className="num mt-1 flex items-center justify-between text-ink-500">
+      <div className="num mt-1 flex items-center justify-between text-mute">
         <span>stake {pts(p.stake)}</span>
         <span className={tone}>{p.status.toUpperCase()}</span>
         <span>payout {pts(p.payout)}</span>
@@ -110,19 +110,19 @@ export function PositionCard({ p, outcomeName }: { p: Position; outcomeName: (o:
       <button
         onClick={() => setOpen(!open)}
         aria-expanded={open}
-        className="mt-2 rounded border border-navy-700 px-2 py-0.5 text-[11px] hover:border-gold-400/60"
+        className="mt-2 rounded-md border border-line-2 px-2 py-0.5 text-[11px] hover:border-accent/60"
       >
         {open ? "hide receipt" : "receipt"}
       </button>
       {open && (
-        <dl className="num mt-2 grid gap-x-4 gap-y-1 border-t border-navy-800 pt-2 text-[11px] text-ink-500">
+        <dl className="num mt-2 grid gap-x-4 gap-y-1 border-t border-line pt-2 text-[11px] text-mute">
           <Field label="signal seq" value={String(p.signalSeq)} />
           <Field label="odds ref" value={p.oddsRef} />
           <Field label="odds tick" value={new Date(p.oddsTs).toISOString().replace("T", " ").slice(0, 19) + " UTC"} />
           <Field
             label="position"
             value={
-              <a className="text-gold-400 hover:underline" href={ADDR(p.address)} target="_blank" rel="noopener">
+              <a className="text-accent hover:underline" href={ADDR(p.address)} target="_blank" rel="noopener">
                 {p.address.slice(0, 12)}
               </a>
             }
@@ -131,7 +131,7 @@ export function PositionCard({ p, outcomeName }: { p: Position; outcomeName: (o:
             label="open tx"
             value={
               p.openTx ? (
-                <a className="text-gold-400 hover:underline" href={TX(p.openTx)} target="_blank" rel="noopener">
+                <a className="text-accent hover:underline" href={TX(p.openTx)} target="_blank" rel="noopener">
                   {p.openTx.slice(0, 12)}
                 </a>
               ) : p.onChain ? (
@@ -145,7 +145,7 @@ export function PositionCard({ p, outcomeName }: { p: Position; outcomeName: (o:
             label="settle tx"
             value={
               p.settleTx ? (
-                <a className="text-gold-400 hover:underline" href={TX(p.settleTx)} target="_blank" rel="noopener">
+                <a className="text-accent hover:underline" href={TX(p.settleTx)} target="_blank" rel="noopener">
                   {p.settleTx.slice(0, 12)}
                 </a>
               ) : (

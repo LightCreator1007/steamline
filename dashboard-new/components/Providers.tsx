@@ -1,6 +1,7 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ThemeProvider, useTheme } from "next-themes";
 import { Toaster } from "sonner";
 import { useState } from "react";
 import { ApiErrorException, tierOf } from "../lib/errors";
@@ -23,9 +24,22 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       }),
   );
   return (
-    <QueryClientProvider client={client}>
-      {children}
-      <Toaster theme="dark" position="bottom-right" toastOptions={{ style: { fontSize: "12px" } }} />
-    </QueryClientProvider>
+    <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false} disableTransitionOnChange>
+      <QueryClientProvider client={client}>
+        {children}
+        <ThemedToaster />
+      </QueryClientProvider>
+    </ThemeProvider>
+  );
+}
+
+function ThemedToaster() {
+  const { resolvedTheme } = useTheme();
+  return (
+    <Toaster
+      theme={resolvedTheme === "light" ? "light" : "dark"}
+      position="bottom-right"
+      toastOptions={{ style: { fontSize: "12px" } }}
+    />
   );
 }

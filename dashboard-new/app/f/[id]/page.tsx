@@ -40,7 +40,7 @@ export default async function FixturePage({
   );
 
   return (
-    <div className="mx-auto flex max-w-7xl flex-col gap-6 p-4 lg:flex-row lg:p-6">
+    <div className="mx-auto flex max-w-7xl flex-col gap-6 p-4 lg:flex-row lg:gap-8 lg:p-6">
       <Rail games={games} activeId={game.id} />
       <main className="min-w-0 flex-1">{body}</main>
     </div>
@@ -50,23 +50,23 @@ export default async function FixturePage({
 function LiveHeader({ game, pinned }: { game: Game; pinned: Cal }) {
   return (
     <div className="space-y-4">
-      <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-navy-800 pb-3">
-        <h1 className="text-lg font-semibold text-gold-400">
+      <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-line pb-3">
+        <h1 className="font-display text-xl font-semibold tracking-tight text-fg">
           {game.home} vs {game.away}
         </h1>
-        <span className="num text-xs text-ink-500">
+        <span className="num text-xs text-mute">
           {game.stage} · fixture {game.id} · {game.date}
         </span>
-        <span className="num ml-auto text-xs text-ink-500">
+        <span className="num ml-auto text-xs text-mute">
           {(pinned.theta * 100).toFixed(1)}pp / {(pinned.edgeMin * 100).toFixed(1)}% · arena 777
         </span>
       </header>
-      <p className="text-sm text-ink-500">
+      <p className="text-sm text-mute">
         This one is live, so there is no replay to scrub. The agent watches the pre-match window and executes on
         devnet as steam fires; everything below is read back from the chain.
       </p>
       <ChainPanel game={game} thetaPp={pinned.theta * 100} edgePct={pinned.edgeMin * 100} />
-      <footer className="border-t border-navy-800 pt-3 text-[11px] text-ink-500">
+      <footer className="border-t border-line pt-3 text-[11px] text-mute">
         Play-money points. Settlement is provenance-verified against TxLINE&apos;s published roots where anchored; see
         docs for exactly what is and is not proven.
       </footer>
