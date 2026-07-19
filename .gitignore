@@ -26,3 +26,4 @@ fixtures/**/odds-raw.jsonl
 .next/
 *.tsbuildinfo
 .steamline-store/
+dashboard-new/data/

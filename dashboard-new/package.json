@@ -4,6 +4,7 @@
   "description": "",
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node -e \"fs.rmSync('data',{recursive:true,force:true});fs.cpSync('../dashboard/data','data',{recursive:true})\"",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit"

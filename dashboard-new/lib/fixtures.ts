@@ -1,11 +1,21 @@
 // Server-only fixture access. The captures still live in ../dashboard/data
 // (the frozen build reads them over HTTP); here they are read straight off
 // disk so server components can call the engine with zero round trips.
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { OddsPayload } from "../../packages/engine/model.ts";
 
-const DATA = path.join(process.cwd(), "..", "dashboard", "data");
+// Locally the canonical captures sit one level up in ../dashboard/data. In a
+// deployed function the deploy script injects them at <app>/data, and the
+// function may run with cwd at either the app dir or the tracing root above
+// it. First candidate that exists wins.
+const CANDIDATES = [
+  path.join(process.cwd(), "..", "dashboard", "data"),
+  path.join(process.cwd(), "data"),
+  path.join(process.cwd(), "dashboard-new", "data"),
+];
+const DATA = CANDIDATES.find((p) => existsSync(p)) ?? CANDIDATES[0];
 
 export interface Game {
   id: number;
