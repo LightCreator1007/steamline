@@ -1,5 +1,9 @@
 import { type PositionRecord, type Result } from "./model.ts";
 
+// Callers import Result alongside these helpers; re-export so the type travels
+// with the module that produces it.
+export type { Result };
+
 export function outcomeFromScore(home: number, away: number): Result {
   if (home > away) return "home";
   if (home < away) return "away";
