@@ -1,0 +1,28 @@
+@import "tailwindcss";
+
+/* Identity carried over from the shipped dashboard: gold on dark navy, one
+   accent, semantic green/red reserved for won/lost and pnl only. */
+@theme {
+  --color-navy-950: #080d1a;
+  --color-navy-900: #0d1426;
+  --color-navy-800: #141d33;
+  --color-navy-700: #1d2842;
+  --color-ink-500: #7b88a8;
+  --color-ink-300: #b6c0d8;
+  --color-gold-400: #ffd84d;
+  --color-won: #35d07f;
+  --color-lost: #ff6b6b;
+  --font-mono: ui-monospace, "JetBrains Mono", "Geist Mono", monospace;
+}
+
+body {
+  background: var(--color-navy-950);
+  color: var(--color-ink-300);
+  font-feature-settings: "tnum" 1;
+}
+
+/* Every comparable number is tabular; spec section 2. */
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
