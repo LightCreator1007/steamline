@@ -333,7 +333,9 @@ function LivePositions({ positions }: { positions: LiveStatus["positions"] }) {
 }
 
 function PhaseStrip({ phase }: { phase: PhaseStep[] }) {
-  const clock = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  // UTC to match the chart axis: lightweight-charts renders epoch labels in
+  // UTC, so a local clock here would put two timezones on one panel.
+  const clock = (ms: number) => new Date(ms).toISOString().slice(11, 16);
   return (
     <ol className="num flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px]">
       {phase.map((step, i) => (
@@ -345,6 +347,7 @@ function PhaseStrip({ phase }: { phase: PhaseStep[] }) {
           {step.at !== null && <span className="text-ink-500/70">{clock(step.at)}</span>}
         </li>
       ))}
+      <li className="text-ink-500/40">UTC</li>
     </ol>
   );
 }

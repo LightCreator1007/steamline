@@ -128,7 +128,10 @@ export async function GET(req: Request): Promise<Response> {
 
     const watchRaw = await store.hget(WATCH_KEY, String(fixtureId));
     const watch = watchRaw ? parseWatch(watchRaw) : null;
-    const lastTickMs = watch?.lastTickMs || (ticks.length > 0 ? ticks[ticks.length - 1].ts : null);
+    // The union just built IS the tape on screen; the watch record only knows
+    // what the cron durably ingested. Header stats must match the chart, so
+    // the union wins and the watch is a fallback for when the feed is down.
+    const lastTickMs = ticks.length > 0 ? ticks[ticks.length - 1].ts : watch?.lastTickMs || null;
     const kickoffMs = Date.parse(game.kickoff ?? "") || Date.now();
     const settled = matchState.status === "settled" || watch?.settled === true;
 
@@ -159,7 +162,7 @@ export async function GET(req: Request): Promise<Response> {
         ticks,
         phase,
         lastTickMs,
-        ticksSeen: watch?.ticks ?? ticks.length,
+        ticksSeen: ticks.length > 0 ? ticks.length : (watch?.ticks ?? 0),
         fetchedAt: Date.now(),
       },
       { headers: { "Cache-Control": "s-maxage=30, stale-while-revalidate=60" } },

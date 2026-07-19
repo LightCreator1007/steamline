@@ -178,7 +178,8 @@ export default function Replay({
                         <p key={k} className="border-l-2 border-[#ff7a5c] py-1 pl-2">
                           <b className="text-[#ff7a5c]">STEAM</b> on {outcomeName(ev.signal.outcome)}:{" "}
                           <span className="num">
-                            {(ev.signal.preProb * 100).toFixed(1)}% -&gt; {(ev.signal.postProb * 100).toFixed(1)}% (+
+                            {(ev.signal.preProb * 100).toFixed(1)}% -&gt; {(ev.signal.postProb * 100).toFixed(1)}% (
+                            {ev.signal.postProb >= ev.signal.preProb ? "+" : "-"}
                             {(ev.signal.magnitude * 100).toFixed(1)}pp sustained)
                           </span>
                         </p>
